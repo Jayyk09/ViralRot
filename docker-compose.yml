@@ -1,19 +1,91 @@
 version: "3.9"
 
 services:
+  # FastAPI Application
+  app:
+    build: .
+    container_name: viratrot-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Database - defaults to local docker db, override with Neon for production
+      - DATABASE_URL=${DATABASE_URL:-postgresql://emory_hacks_user:devpassword@db:5432/emory_hacks_db}
+      # API Keys (required)
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - Peter_voiceId=${Peter_voiceId}
+      - Stewie_voiceId=${Stewie_voiceId}
+      - RapidAPI_Key=${RapidAPI_Key}
+      # AWS (optional, for S3 uploads)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+    volumes:
+      # Static assets (read-only)
+      - ./assets/videos:/app/assets/videos:ro
+      - ./assets/characters:/app/assets/characters:ro
+      # Generated content (read-write)
+      - video_output:/app/assets/output
+      - audio_output:/app/assets/audio/generated
+      - tmp_uploads:/app/tmp/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - dev
+      - prod
+
+  # Production app (connects to external Neon DB)
+  app-prod:
+    build: .
+    container_name: viratrot-api-prod
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - Peter_voiceId=${Peter_voiceId}
+      - Stewie_voiceId=${Stewie_voiceId}
+      - RapidAPI_Key=${RapidAPI_Key}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+    volumes:
+      - ./assets/videos:/app/assets/videos:ro
+      - ./assets/characters:/app/assets/characters:ro
+      - video_output:/app/assets/output
+      - audio_output:/app/assets/audio/generated
+      - tmp_uploads:/app/tmp/uploads
+    restart: unless-stopped
+    profiles:
+      - prod-only
+
+  # Local PostgreSQL (development only)
   db:
     image: postgres:16
-    container_name: emory-hacks-postgres
+    container_name: viratrot-postgres
     environment:
       POSTGRES_DB: emory_hacks_db
       POSTGRES_USER: emory_hacks_user
       POSTGRES_PASSWORD: devpassword
     ports:
-      - "3001:5432"
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emory_hacks_user -d emory_hacks_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - dev
 
 volumes:
   pgdata:
+  video_output:
+  audio_output:
+  tmp_uploads:
