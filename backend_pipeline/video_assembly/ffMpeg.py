@@ -1,6 +1,5 @@
 import subprocess
 import os
-import json
 import textwrap
 
 def wrap_caption_text(text, max_chars=32):
@@ -276,17 +275,6 @@ def create_video_with_audio_and_captions(
         print(f"❌ Error creating video:")
         print(result.stderr)
         raise Exception(f"FFmpeg failed with return code {result.returncode}")
-
-def get_video_info(video_path):
-    """Get video duration and other info using ffprobe."""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration:stream=width,height,codec_name",
-        "-of", "json",
-        video_path
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return json.loads(result.stdout)
 
 if __name__ == "__main__":
     # Example usage
