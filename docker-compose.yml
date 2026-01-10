@@ -15,7 +15,6 @@ services:
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - Peter_voiceId=${Peter_voiceId}
       - Stewie_voiceId=${Stewie_voiceId}
-      - RapidAPI_Key=${RapidAPI_Key}
       # AWS (optional, for S3 uploads)
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
@@ -48,7 +47,6 @@ services:
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - Peter_voiceId=${Peter_voiceId}
       - Stewie_voiceId=${Stewie_voiceId}
-      - RapidAPI_Key=${RapidAPI_Key}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}

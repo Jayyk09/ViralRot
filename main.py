@@ -134,16 +134,20 @@ def _move_upload_to_disk(upload: UploadFile, destination: Path):
     upload.file.close()
 
 
-def _is_youtube_url(text: str) -> bool:
-    """Check if a string is a YouTube URL."""
+def _is_json_transcript(text: str) -> bool:
+    """Check if a string looks like JSON transcript data."""
     if not text:
         return False
-    youtube_patterns = [
-        r'(https?://)?(www\.)?(youtube\.com|youtu\.be)/',
-        r'youtube\.com/watch\?v=',
-        r'youtu\.be/',
-    ]
-    return any(re.search(pattern, text, re.IGNORECASE) for pattern in youtube_patterns)
+    text = text.strip()
+    # Check if it starts with { or [ (JSON object or array)
+    if text.startswith('{') or text.startswith('['):
+        try:
+            import json
+            json.loads(text)
+            return True
+        except json.JSONDecodeError:
+            return False
+    return False
 
 
 async def _generate_videos(user_id, subtopics, prefix: str):
@@ -196,19 +200,28 @@ async def generate_video_from_subtopics(payload: SubtopicRequest, user_id: int =
 
 @app.post("/generate-video")
 async def generate_video(
-    input_type: str = Form("auto", description="audio|text|youtube|auto (auto-detects from content)"),
+    input_type: str = Form("auto", description="audio|text|transcript|auto (auto-detects from content)"),
     user_id: int = Form(1, description="User ID for video ownership"),
     content: str | None = Form(
         None,
-        description="Text, YouTube URL, or other string content depending on input_type",
+        description="Text content or pre-formatted JSON transcript",
     ),
     file: UploadFile | None = File(
         None,
         description="Used when input_type is audio (MP3 upload).",
     ),
 ):
+    """
+    Generate videos from various input types.
+
+    Input types:
+    - audio: MP3 file upload, processed by Gemini to generate dialogue
+    - text: Raw text content, processed by Gemini to generate dialogue
+    - transcript: Pre-formatted JSON matching the schema (bypasses Gemini)
+    - auto: Automatically detect from content (JSON -> transcript, otherwise -> text)
+    """
     input_type = input_type.lower()
-    supported = {"audio", "text", "youtube", "auto"}
+    supported = {"audio", "text", "transcript", "auto"}
     if input_type not in supported:
         raise HTTPException(
             status_code=400,
@@ -224,8 +237,8 @@ async def generate_video(
         if input_type == "auto":
             if file:
                 input_type = "audio"
-            elif content and _is_youtube_url(content):
-                input_type = "youtube"
+            elif content and _is_json_transcript(content):
+                input_type = "transcript"
             elif content:
                 input_type = "text"
             else:
@@ -233,7 +246,7 @@ async def generate_video(
                     status_code=400,
                     detail="Unable to auto-detect input type. Please provide either a file or content."
                 )
-        
+
         if input_type == "audio":
             if not file:
                 raise HTTPException(status_code=400, detail="Audio file is required.")
@@ -247,11 +260,11 @@ async def generate_video(
                 raise HTTPException(status_code=400, detail="content is required for text input_type.")
             transcript_source = content
             transcript_type = "text"
-        elif input_type == "youtube":
+        elif input_type == "transcript":
             if not content:
-                raise HTTPException(status_code=400, detail="YouTube URL is required in content field.")
+                raise HTTPException(status_code=400, detail="JSON content is required for transcript input_type.")
             transcript_source = content
-            transcript_type = "youtube"
+            transcript_type = "transcript"
 
         subtopics = await _run_blocking(
             extract_transcripts,

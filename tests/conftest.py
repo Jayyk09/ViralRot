@@ -14,7 +14,6 @@ def mock_env_vars(monkeypatch):
     monkeypatch.setenv("Peter_voiceId", "test-peter-voice")
     monkeypatch.setenv("Stewie_voiceId", "test-stewie-voice")
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-    monkeypatch.setenv("RapidAPI_Key", "test-rapidapi-key")
 
 
 @pytest.fixture

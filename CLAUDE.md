@@ -43,8 +43,9 @@ Required in `.env` (see `.env.example`):
 - `ELEVENLABS_API_KEY` - ElevenLabs API key for TTS
 - `Peter_voiceId`, `Stewie_voiceId` - ElevenLabs voice IDs
 - `DATABASE_URL` - PostgreSQL connection string (Neon for prod, local for dev)
-- `RapidAPI_Key` - For YouTube transcript extraction
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` - For S3 video storage
+
+Note: YouTube transcript extraction uses `youtube-transcript-api` (no API key required)
 
 ## Architecture
 
