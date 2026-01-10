@@ -12,24 +12,39 @@ A FastAPI application that generates educational videos from various input sourc
 # Start development server
 uvicorn main:app --reload
 
-# Run complete collection pipeline test
-python test_complete_collection.py
+# Run tests
+pytest tests/ -v
 
-# Test quiz pipeline
-python test_quiz_pipeline.py --input <file> --type <audio|text|youtube>
+# Run specific test file
+pytest tests/test_subtopics.py -v
 
-# Run quiz API tests
-python test_quiz_api.py --input <file> --type <type>
+# Run with coverage
+pytest tests/ --cov=. --cov-report=html
+
+# CLI usage (complete collection pipeline)
+python cli.py --source lecture.mp3 --source-type audio --user-id 1
+python cli.py --source notes.txt --source-type text
+python cli.py --source "https://youtube.com/watch?v=..." --source-type youtube
+
+# Docker - Development (with local PostgreSQL)
+docker compose --profile dev up -d
+
+# Docker - Production (with external Neon DB)
+docker compose --profile prod-only up -d
+
+# Docker build only
+docker compose build
 ```
 
 ## Environment Variables
 
 Required in `.env` (see `.env.example`):
-- `Gemini_API_Key` - Google Gemini API key for script generation
+- `GEMINI_API_KEY` - Google Gemini API key for script generation
 - `ELEVENLABS_API_KEY` - ElevenLabs API key for TTS
 - `Peter_voiceId`, `Stewie_voiceId` - ElevenLabs voice IDs
-- `DATABASE_URL` - PostgreSQL connection string (Neon)
+- `DATABASE_URL` - PostgreSQL connection string (Neon for prod, local for dev)
 - `RapidAPI_Key` - For YouTube transcript extraction
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` - For S3 video storage
 
 ## Architecture
 
@@ -49,7 +64,11 @@ The project separates fast operations (frontend) from slow, I/O-intensive operat
 - `video_assembly/ffMpeg_quiz.py` - Video assembly with quiz timing
 - `generate_subtopic_videos.py` - Orchestrates subtopic video creation
 - `generate_quiz_video.py` - Orchestrates quiz video creation
-- `generate_complete_collection.py` - Full pipeline: subtopics + quiz → collection
+
+### Entry Points
+
+- `main.py` - FastAPI application with all API endpoints
+- `cli.py` - Command-line interface for batch processing
 
 ### Data Flow
 
@@ -85,12 +104,28 @@ Quiz questions include `ask` and `reveal` scripts (<25 words each) with timing f
 ## API Endpoints
 
 - `POST /generate-video` - Generate subtopic + quiz videos from source
-- `POST /generate-complete-collection` - Full collection from single source
-- `POST /extract-quiz-transcripts` - Extract quiz JSON only
-- `POST /generate-quiz-video` - Generate video from quiz JSON
 - `GET /videos` - User videos grouped by collection
 - `GET /collections` - List user collections
 - `GET /collections/{id}` - Collection details with videos
+- `POST /accounts` - Create user account
+- `POST /accounts/login` - Authenticate user
+
+## Testing
+
+Tests are organized by feature in `tests/`:
+- `test_subtopics.py` - Subtopic extraction and video generation
+- `test_quiz.py` - Quiz extraction and video generation
+- `test_collections.py` - Collection CRUD operations
+- `test_api.py` - FastAPI endpoint tests
+
+Shared fixtures in `conftest.py` mock external services (Gemini, ElevenLabs, DB, S3, FFmpeg).
+
+## Docker Setup
+
+- `Dockerfile` - Python 3.11 + FFmpeg + dependencies
+- `docker-compose.yml` - Two profiles:
+  - `dev`: App + local PostgreSQL
+  - `prod-only`: App only (uses external Neon DB)
 
 ## Asset Directories
 
