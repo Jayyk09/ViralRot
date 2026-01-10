@@ -18,7 +18,7 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from save_to_db.save_video import add_video
 
@@ -140,17 +140,21 @@ def generate_quiz_video(
     output_dir: Path | str,
     audio_dir: Path | str,
     user_id: int,
+    collection_id: Optional[int] = None,
+    subtopic_count: Optional[int] = None,
 ) -> Dict[str, str]:
     """
     Generate a single quiz video from quiz modules.
-    
+
     Args:
         quiz_modules: List of quiz module dictionaries
         background_video: Path to background video or directory of videos
         output_dir: Directory to store generated video
         audio_dir: Directory to store generated audio assets
         user_id: User ID for database entry
-    
+        collection_id: Optional collection ID to link quiz to. If not provided, uses last collection.
+        subtopic_count: Optional count of subtopics for description. If not provided, uses quiz module count.
+
     Returns:
         Dictionary with video info (s3_key, title, etc.)
     """
@@ -220,11 +224,18 @@ def generate_quiz_video(
     if len(subtopic_titles) > 2:
         quiz_title += f" +{len(subtopic_titles) - 2} more"
     
-    description = f"Test your knowledge with {sum(len(m['questions']) for m in quiz_modules)} questions"
-    
-    # Get the last collection ID (returns dict with 'id' or None)
-    collection_dict = find_last_collection(user_id)
-    collection_id = collection_dict["id"] if collection_dict else None
+    total_questions = sum(len(m['questions']) for m in quiz_modules)
+    actual_subtopic_count = subtopic_count if subtopic_count is not None else len(quiz_modules)
+    description = f"Quiz (Final) - {total_questions} questions covering all {actual_subtopic_count} subtopics"
+
+    # Use provided collection_id or find the last one
+    if collection_id is None:
+        collection_dict = find_last_collection(user_id)
+        collection_id = collection_dict["id"] if collection_dict else None
+        if collection_id:
+            print(f"📁 Linking quiz to last collection (ID: {collection_id})")
+    else:
+        print(f"📁 Linking quiz to collection (ID: {collection_id})")
 
     # Open video file and upload
     with open(video_output_path, "rb") as video_file:

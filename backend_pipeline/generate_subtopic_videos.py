@@ -14,9 +14,9 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from save_to_db.save_video import add_video
-from save_to_db.collection_service import create_collection, generate_collection_title
+from save_to_db.collection_service import create_collection, generate_collection_title, get_collection
 
 from backend_pipeline.audio_generation.elevenLabs import (
     generate_audio_from_transcript,
@@ -72,7 +72,22 @@ def generate_videos_from_subtopic_list(
     output_dir: Path | str,
     audio_dir: Path | str,
     user_id: int,
+    collection_id: Optional[int] = None,
 ) -> List[Dict[str, str]]:
+    """
+    Generate videos from a list of subtopic transcripts.
+
+    Args:
+        subtopics: List of subtopic dictionaries with dialogue
+        background_video: Path to background video or directory of videos
+        output_dir: Directory to store generated videos
+        audio_dir: Directory to store generated audio assets
+        user_id: User ID for database entry
+        collection_id: Optional existing collection ID. If not provided, creates new collection.
+
+    Returns:
+        List of dictionaries with video info for each subtopic
+    """
     background_video_path = Path(background_video)
     output_dir = Path(output_dir)
     audio_dir = Path(audio_dir)
@@ -86,12 +101,19 @@ def generate_videos_from_subtopic_list(
     # Determine if background_video is a directory or a single file
     is_directory = background_video_path.is_dir()
 
-    # Step 1: Create collection first based on subtopic titles
+    # Step 1: Create or use existing collection
     subtopic_titles = [subtopic["subtopic_title"] for subtopic in subtopics]
-    collection_title = generate_collection_title(subtopic_titles)
-    collection_id = create_collection(user_id, collection_title)
 
-    print(f"\n✨ Created collection: '{collection_title}' (ID: {collection_id})")
+    if collection_id is not None:
+        # Use existing collection
+        collection = get_collection(collection_id)
+        collection_title = collection["collection_title"] if collection else "Collection"
+        print(f"\n📁 Using existing collection: '{collection_title}' (ID: {collection_id})")
+    else:
+        # Create new collection
+        collection_title = generate_collection_title(subtopic_titles)
+        collection_id = create_collection(user_id, collection_title)
+        print(f"\n✨ Created collection: '{collection_title}' (ID: {collection_id})")
 
     # Step 2: Generate all videos and store them temporarily
     video_files = []
