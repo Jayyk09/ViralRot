@@ -199,29 +199,3 @@ class TestYoutubeIntegration:
             # at least verify YouTube extraction was called
             mock_yt_api.get_transcript.assert_called_once()
 
-    @patch('frontend_pipeline.script_generation.youtube.YouTubeTranscriptApi')
-    @patch('frontend_pipeline.script_generation.transcripts.genai')
-    def test_extract_quiz_transcripts_with_youtube(self, mock_genai, mock_yt_api):
-        """Test extract_quiz_transcripts with YouTube URL."""
-        from frontend_pipeline.script_generation.transcripts import extract_quiz_transcripts
-
-        # Mock YouTube API
-        mock_yt_api.get_transcript.return_value = [
-            {'text': 'Quiz content here', 'start': 0.0, 'duration': 1.0},
-        ]
-
-        # Mock Gemini API
-        mock_client = MagicMock()
-        mock_genai.Client.return_value = mock_client
-        
-        mock_chunk = MagicMock()
-        mock_chunk.text = '{"quiz_modules": []}'
-        mock_client.models.generate_content_stream.return_value = [mock_chunk]
-
-        url = "https://youtu.be/test456"
-        
-        try:
-            result = extract_quiz_transcripts(url, "youtube")
-            mock_yt_api.get_transcript.assert_called_once()
-        except Exception:
-            mock_yt_api.get_transcript.assert_called_once()

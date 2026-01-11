@@ -14,15 +14,10 @@ try:
         AUDIO_PROMPT,
         TEXT_PROMPT,
         PPTX_PROMPT,
-        AUDIO_QUIZ_PROMPT,
-        TEXT_QUIZ_PROMPT,
-        PPTX_QUIZ_PROMPT,
     )
     from frontend_pipeline.script_generation.models import (
         TranscriptResponse,
         SubtopicDialogue,
-        QuizResponse,
-        QuizModule,
     )
     from frontend_pipeline.script_generation.youtube import get_youtube_transcript
 except ImportError:  # pragma: no cover - fallback when run as script
@@ -30,15 +25,10 @@ except ImportError:  # pragma: no cover - fallback when run as script
         AUDIO_PROMPT,
         TEXT_PROMPT,
         PPTX_PROMPT,
-        AUDIO_QUIZ_PROMPT,
-        TEXT_QUIZ_PROMPT,
-        PPTX_QUIZ_PROMPT,
     )
     from script_generation.models import (  # type: ignore
         TranscriptResponse,
         SubtopicDialogue,
-        QuizResponse,
-        QuizModule,
     )
     from script_generation.youtube import get_youtube_transcript  # type: ignore
 
@@ -56,16 +46,6 @@ def _extend_from_payload(payload: Any, subtopics: List[SubtopicDialogue]) -> boo
         return False
 
     subtopics.extend(model.subtopic_transcripts)
-    return True
-
-
-def _extend_from_quiz_payload(payload: Any, quiz_modules: List[QuizModule]) -> bool:
-    try:
-        model = QuizResponse.model_validate(payload)
-    except ValidationError:
-        return False
-
-    quiz_modules.extend(model.quiz_modules)
     return True
 
 
@@ -101,40 +81,6 @@ def parse_transcript_json(json_input: str) -> List[SubtopicDialogue]:
         return list(response.subtopic_transcripts)
     except ValidationError as e:
         raise ValueError(f"JSON doesn't match transcript schema: {e}")
-
-
-def parse_quiz_json(json_input: str) -> List[QuizModule]:
-    """
-    Parse pre-formatted quiz JSON directly without Gemini processing.
-
-    Accepts JSON in either format:
-    1. Full format: {"quiz_modules": [...]}
-    2. Direct array: [{"subtopic_title": "...", "questions": [...]}]
-
-    Args:
-        json_input: JSON string matching the QuizResponse schema
-
-    Returns:
-        List of QuizModule objects
-
-    Raises:
-        ValueError: If JSON is invalid or doesn't match schema
-    """
-    try:
-        data = json.loads(json_input)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON: {e}")
-
-    # Handle both formats
-    if isinstance(data, list):
-        # Direct array format
-        data = {"quiz_modules": data}
-
-    try:
-        response = QuizResponse.model_validate(data)
-        return list(response.quiz_modules)
-    except ValidationError as e:
-        raise ValueError(f"JSON doesn't match quiz schema: {e}")
 
 
 def extract_transcripts(file, file_type):
@@ -292,163 +238,6 @@ def extract_transcripts(file, file_type):
             pass
 
     return subtopic_transcripts
-
-
-def extract_quiz_transcripts(file, file_type):
-    """
-    Extract quiz modules from various input types.
-
-    Args:
-        file: Input content (file path, text content, YouTube URL, or JSON string)
-        file_type: One of 'audio/mp3', 'text', 'pptx', 'youtube', 'transcript'
-            - audio/mp3: Path to audio file
-            - text: Raw text content to generate quiz from
-            - pptx: PowerPoint text content
-            - youtube: YouTube URL or video ID
-            - transcript: Pre-formatted JSON matching the schema (bypasses Gemini)
-
-    Returns:
-        List of QuizModule objects
-    """
-    # Handle pre-formatted quiz JSON directly (no Gemini)
-    if file_type == "transcript":
-        json_input = _ensure_text(file)
-        return parse_quiz_json(json_input)
-
-    dotenv.load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY not set")
-
-    client = genai.Client(api_key=api_key)
-    model = "gemini-2.5-flash"
-
-    if file_type == "audio/mp3":
-        if not os.path.isfile(file):
-            raise FileNotFoundError(f"Audio file not found: {file}")
-        with open(file, "rb") as f:
-            audio_bytes = f.read()
-        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-        contents = [
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part(inline_data=types.Blob(data=audio_b64, mime_type="audio/mp3")),
-                ],
-            ),
-        ]
-        prompt = [
-            types.Part.from_text(text=AUDIO_QUIZ_PROMPT),
-        ]
-    elif file_type == "text":
-        text_data = _ensure_text(file)
-        contents = [
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(text=text_data),
-                ],
-            ),
-        ]
-        prompt = [
-            types.Part.from_text(text=TEXT_QUIZ_PROMPT),
-        ]
-    elif file_type == "youtube":
-        # Fetch transcript from YouTube and process as text
-        youtube_transcript = get_youtube_transcript(file)
-        contents = [
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(text=youtube_transcript),
-                ],
-            ),
-        ]
-        prompt = [
-            types.Part.from_text(text=TEXT_QUIZ_PROMPT),
-        ]
-    elif file_type == "pptx":
-        pptx_data = _ensure_text(file)
-        contents = [
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(text=pptx_data),
-                ],
-            ),
-        ]
-        prompt = [
-            types.Part.from_text(text=PPTX_QUIZ_PROMPT)
-        ]
-    else:
-        raise ValueError(f"Unsupported file_type: {file_type}. Use 'audio/mp3', 'text', 'pptx', 'youtube', or 'transcript'.")
-
-    generate_content_config = types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(
-            thinking_budget=0,
-        ),
-        image_config=types.ImageConfig(
-            image_size="1K",
-        ),
-        response_mime_type="application/json",
-        response_schema=QuizResponse.model_json_schema(),
-        system_instruction=prompt
-    )
-
-    quiz_modules: List[QuizModule] = []
-    accumulated_text = ""
-
-    for chunk in client.models.generate_content_stream(
-        model=model,
-        contents=contents,
-        config=generate_content_config,
-    ):
-        text = getattr(chunk, "text", None) or ""
-        accumulated_text += text
-
-        try:
-            parsed = json.loads(accumulated_text)
-            if isinstance(parsed, dict) and _extend_from_quiz_payload(parsed, quiz_modules):
-                break
-        except Exception:
-            pass
-
-        resp_data = None
-        if hasattr(chunk, "response") and getattr(chunk, "response"):
-            resp = getattr(chunk, "response")
-            if hasattr(resp, "data") and getattr(resp, "data"):
-                resp_data = getattr(resp, "data")
-
-        if resp_data is None:
-            try:
-                dumped = chunk.model_dump()
-            except Exception:
-                dumped = getattr(chunk, "__dict__", None)
-
-            if isinstance(dumped, dict):
-                if "response" in dumped and isinstance(dumped["response"], dict):
-                    resp_data = dumped["response"].get("data")
-                elif "data" in dumped and dumped["data"]:
-                    resp_data = dumped["data"]
-                elif "outputs" in dumped and dumped["outputs"]:
-                    for out in dumped["outputs"]:
-                        if isinstance(out, dict) and "data" in out and out["data"]:
-                            resp_data = out["data"]
-                            break
-
-        if resp_data and isinstance(resp_data, dict):
-            if _extend_from_quiz_payload(resp_data, quiz_modules):
-                break
-
-    if not quiz_modules and accumulated_text:
-        try:
-            parsed = json.loads(accumulated_text)
-            if isinstance(parsed, dict):
-                _extend_from_quiz_payload(parsed, quiz_modules)
-        except Exception:
-            pass
-
-    return quiz_modules
 
 
 if __name__ == "__main__":

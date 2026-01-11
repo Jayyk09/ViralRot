@@ -46,50 +46,6 @@ def sample_subtopics(sample_subtopic_dialogue):
 
 
 @pytest.fixture
-def sample_quiz_question():
-    """Sample quiz question for testing."""
-    return {
-        "question_number": 1,
-        "type": "multiple_choice",
-        "question_text": "What gas do plants absorb during photosynthesis?",
-        "options": ["Oxygen", "Carbon Dioxide", "Nitrogen", "Helium"],
-        "correct_answer": "Carbon Dioxide",
-        "script": {
-            "ask": "What gas do plants suck up? Think about it!",
-            "reveal": "Carbon dioxide! Plants love the stuff!"
-        }
-    }
-
-
-@pytest.fixture
-def sample_quiz_module(sample_quiz_question):
-    """Sample quiz module for testing."""
-    return {
-        "subtopic_title": "Photosynthesis",
-        "questions": [
-            sample_quiz_question,
-            {
-                "question_number": 2,
-                "type": "multiple_choice",
-                "question_text": "What pigment makes plants green?",
-                "options": ["Melanin", "Chlorophyll", "Carotene", "Hemoglobin"],
-                "correct_answer": "Chlorophyll",
-                "script": {
-                    "ask": "What makes plants green? Pick your answer!",
-                    "reveal": "Its chlorophyll! The green machine!"
-                }
-            }
-        ]
-    }
-
-
-@pytest.fixture
-def sample_quiz_modules(sample_quiz_module):
-    """Sample list of quiz modules for testing."""
-    return [sample_quiz_module]
-
-
-@pytest.fixture
 def temp_output_dir():
     """Create temporary directory for test outputs."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -116,14 +72,6 @@ def temp_audio_file(temp_output_dir):
 def mock_elevenlabs():
     """Mock ElevenLabs API calls."""
     with patch("backend_pipeline.audio_generation.elevenLabs.client") as mock:
-        mock.text_to_speech.convert.return_value = iter([b"fake-audio-data"])
-        yield mock
-
-
-@pytest.fixture
-def mock_elevenlabs_quiz():
-    """Mock ElevenLabs API calls for quiz."""
-    with patch("backend_pipeline.audio_generation.elevenLabs_quiz.client") as mock:
         mock.text_to_speech.convert.return_value = iter([b"fake-audio-data"])
         yield mock
 

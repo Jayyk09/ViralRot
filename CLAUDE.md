@@ -54,17 +54,15 @@ Note: YouTube transcript extraction uses `youtube-transcript-api` (no API key re
 The project separates fast operations (frontend) from slow, I/O-intensive operations (backend):
 
 **Frontend Pipeline** (`frontend_pipeline/`):
-- `script_generation/transcripts.py` - Extracts subtopic and quiz transcripts from sources
+- `script_generation/transcripts.py` - Extracts subtopic transcripts from sources
 - `script_generation/prompts.py` - Gemini prompt templates for content extraction
 - `script_generation/models.py` - Pydantic models for script structure
+- `script_generation/youtube.py` - YouTube transcript extraction helper
 
 **Backend Pipeline** (`backend_pipeline/`):
 - `audio_generation/elevenLabs.py` - TTS for subtopic videos
-- `audio_generation/elevenLabs_quiz.py` - TTS with pause handling for quiz videos
 - `video_assembly/ffMpeg.py` - Video assembly for subtopics
-- `video_assembly/ffMpeg_quiz.py` - Video assembly with quiz timing
 - `generate_subtopic_videos.py` - Orchestrates subtopic video creation
-- `generate_quiz_video.py` - Orchestrates quiz video creation
 
 ### Entry Points
 
@@ -80,11 +78,7 @@ extract_transcripts() → List[SubtopicPayload]
     ↓
 generate_videos_from_subtopic_list() → Videos uploaded to S3
     ↓
-extract_quiz_transcripts() → List[QuizModule]
-    ↓
-generate_quiz_video() → Quiz video uploaded to S3
-    ↓
-All saved to same collection in PostgreSQL
+All saved to collection in PostgreSQL
 ```
 
 ### Database Layer (`save_to_db/`)
@@ -100,11 +94,9 @@ Script format uses `{t, c, s}` structure:
 - `c`: Short caption for screen
 - `s`: Speaker ID (Peter/Stewie)
 
-Quiz questions include `ask` and `reveal` scripts (<25 words each) with timing for pauses before reveals.
-
 ## API Endpoints
 
-- `POST /generate-video` - Generate subtopic + quiz videos from source
+- `POST /generate-video` - Generate subtopic videos from source
 - `GET /videos` - User videos grouped by collection
 - `GET /collections` - List user collections
 - `GET /collections/{id}` - Collection details with videos
@@ -115,9 +107,9 @@ Quiz questions include `ask` and `reveal` scripts (<25 words each) with timing f
 
 Tests are organized by feature in `tests/`:
 - `test_subtopics.py` - Subtopic extraction and video generation
-- `test_quiz.py` - Quiz extraction and video generation
 - `test_collections.py` - Collection CRUD operations
 - `test_api.py` - FastAPI endpoint tests
+- `test_youtube.py` - YouTube transcript extraction
 
 Shared fixtures in `conftest.py` mock external services (Gemini, ElevenLabs, DB, S3, FFmpeg).
 

@@ -11,11 +11,10 @@ from save_to_db.save_video import get_user_videos, get_collection_videos
 from save_to_db.collection_service import get_collection, get_user_collections, find_last_collection
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from frontend_pipeline.script_generation.transcripts import extract_transcripts, extract_quiz_transcripts
+from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_subtopic_videos import (
     generate_videos_from_subtopic_list,
 )
-from backend_pipeline.generate_quiz_video import generate_quiz_video
 import save_to_db.account_service as account_service
 
 BACKGROUND_VIDEOS_DIR = Path("assets/videos")
@@ -40,30 +39,6 @@ class SubtopicPayload(BaseModel):
 
 class SubtopicRequest(BaseModel):
     subtopic_transcripts: List[SubtopicPayload]
-
-
-class QuizScript(BaseModel):
-    ask: str
-    reveal: str
-
-
-class QuizQuestion(BaseModel):
-    question_number: int
-    type: str
-    question_text: str
-    options: List[str]
-    correct_answer: str
-    script: QuizScript
-
-
-class QuizModule(BaseModel):
-    subtopic_title: str
-    questions: List[QuizQuestion]
-
-
-class QuizRequest(BaseModel):
-    user_id: int
-    quiz_modules: List[QuizModule]
 
 
 app = FastAPI(
@@ -165,20 +140,7 @@ async def _generate_videos(user_id, subtopics, prefix: str):
         user_id,
     )
 
-async def _generate_quiz_videos(user_id, quiz_modules, prefix: str):
-    session_id = uuid4().hex
-    video_output_dir = OUTPUT_DIR / f"{prefix}_{session_id}"
-    audio_output_dir = GENERATED_AUDIO_DIR / f"{prefix}_{session_id}"
-    
-    # Pass the videos directory so each subtopic can randomly select its own background
-    return await _run_blocking(
-        generate_quiz_video,
-        quiz_modules,
-        str(BACKGROUND_VIDEOS_DIR),
-        str(video_output_dir),
-        str(audio_output_dir),
-        user_id,
-    )
+
 
 async def generate_video_from_subtopics(payload: SubtopicRequest, user_id: int = 1):
     _validate_background_video()
@@ -286,27 +248,6 @@ async def generate_video(
             prefix="session",
         )
 
-        # Generate quiz modules (wrap in _run_blocking since it's synchronous)
-        quiz_modules = await _run_blocking(
-            extract_quiz_transcripts,
-            transcript_source,
-            transcript_type,
-        )
-
-        if not quiz_modules:
-            detail = {
-                "error": "model_returned_no_quiz_modules",
-                "input_type": input_type,
-                "content_preview": (transcript_source or "")[:280],
-            }
-            raise HTTPException(status_code=502, detail=detail)
-        
-        quiz_results = await _generate_quiz_videos(
-            user_id,
-            [quiz_module.model_dump() for quiz_module in quiz_modules],
-            prefix="quiz_session",
-        )
-
         # Get the last collection ID (wrap in _run_blocking)
         collection_dict = await _run_blocking(find_last_collection, user_id)
         collection_id = collection_dict["id"] if collection_dict else None
@@ -314,7 +255,6 @@ async def generate_video(
         return {
             "count": len(video_results),
             "results": video_results,
-            "quiz_video": quiz_results,
             "collection_id": collection_id,
         }
     finally:
