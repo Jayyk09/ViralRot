@@ -36,7 +36,8 @@ def create_video_with_audio_and_captions(
     output_file="assets/output/final_video.mp4",
     video_size=(1080, 1920),  # Portrait 9:16 for TikTok/Reels
     peter_image=None,  # Deprecated, kept for backward compatibility
-    stewie_image=None  # Deprecated, kept for backward compatibility
+    stewie_image=None,  # Deprecated, kept for backward compatibility
+    educational_images=None,  # List of educational image configs
 ):
     """
     Create a video with looping background, audio, caption overlays, and character images.
@@ -49,6 +50,11 @@ def create_video_with_audio_and_captions(
         video_size: Tuple of (width, height) for output video
         peter_image: Deprecated - images now selected based on emotion
         stewie_image: Deprecated - images now selected based on emotion
+        educational_images: List of educational image configs with:
+            - path: Image file path
+            - size: "medium" (432px) or "large" (800px)
+            - start: Start time in seconds
+            - end: End time in seconds
     
     Returns:
         Path to output video
@@ -172,8 +178,8 @@ def create_video_with_audio_and_captions(
     current_stream = "[bg]"
     input_index = 2  # 0=background, 1=audio, 2+=character images
     character_height = 800
-    peter_margin = 10
-    stewie_margin = 0  # Moved closer to the left edge
+    peter_margin = 0   # Both characters now on left side
+    stewie_margin = 0  # Both characters now on left side
     
     # Scale all character images first
     character_scaled_streams = {}
@@ -187,7 +193,7 @@ def create_video_with_audio_and_captions(
             character_scaled_streams[key] = f"[{stream_name}]"
             input_index += 1
     
-    # Overlay characters in order: Stewie on left, Peter on right
+    # Overlay characters in order: Both on bottom-left (right side free for images)
     # Group by speaker to maintain consistent positioning
     stewie_keys = [k for k in character_images.keys() if k[0] == "STEWIE"]
     peter_keys = [k for k in character_images.keys() if k[0] == "PETER"]
@@ -205,16 +211,96 @@ def create_video_with_audio_and_captions(
             current_stream = f"[tmp_{overlay_count}]"
             overlay_count += 1
     
-    # Overlay all Peter emotions on bottom right
+    # Overlay all Peter emotions on bottom left (same side as Stewie)
     for key in peter_keys:
         if key in character_scaled_streams and character_images[key]:
             enable_expr = character_enables[key]
             filter_parts.append(
                 f"{current_stream}{character_scaled_streams[key]}"
-                f"overlay=W-w-{peter_margin}:H-h-{peter_margin}:enable='{enable_expr}'[tmp_{overlay_count}]"
+                f"overlay={peter_margin}:H-h-{peter_margin}:enable='{enable_expr}'[tmp_{overlay_count}]"
             )
             current_stream = f"[tmp_{overlay_count}]"
             overlay_count += 1
+    
+    # ============ Educational Images Overlay ============
+    # Scale and overlay educational images with fade effects
+    # Image sizes: medium=432px wide, large=800px wide
+    # Positions: medium=top-right, large=top-center
+    # Fade: 0.3s fade in/out
+    
+    edu_images = educational_images or []
+    edu_scaled_streams = []
+    edu_input_start_index = input_index  # Track where edu images start in inputs
+    
+    FADE_DURATION = 0.3  # seconds for fade in/out
+    IMAGE_SIZES = {
+        "medium": 432,
+        "large": 800,
+    }
+    
+    # Scale educational images
+    for i, edu_img in enumerate(edu_images):
+        if not os.path.exists(edu_img["path"]):
+            print(f"⚠️  Warning: Educational image not found: {edu_img['path']}")
+            continue
+        
+        size_name = edu_img.get("size", "medium")
+        width = IMAGE_SIZES.get(size_name, IMAGE_SIZES["medium"])
+        
+        stream_name = f"edu_{i}_scaled"
+        filter_parts.append(
+            f"[{input_index}:v]scale={width}:-1[{stream_name}]"
+        )
+        edu_scaled_streams.append({
+            "stream": f"[{stream_name}]",
+            "size": size_name,
+            "start": edu_img["start"],
+            "end": edu_img["end"],
+            "path": edu_img["path"],
+        })
+        input_index += 1
+    
+    # Overlay educational images with positioning and fade
+    for i, edu_stream in enumerate(edu_scaled_streams):
+        start = edu_stream["start"]
+        end = edu_stream["end"]
+        duration = end - start
+        size_name = edu_stream["size"]
+        
+        # Positioning based on size
+        # medium: top-right with 50px margin
+        # large: top-center
+        if size_name == "large":
+            x_pos = "(W-w)/2"  # Center horizontally
+        else:  # medium
+            x_pos = "W-w-50"   # Right side with 50px margin
+        
+        y_pos = "100"  # 100px from top
+        
+        # Fade expression: fade in for first 0.3s, fade out for last 0.3s
+        fade_in_end = start + FADE_DURATION
+        fade_out_start = max(end - FADE_DURATION, fade_in_end)
+        
+        # Alpha expression for overlay - fade in then out
+        # Clamp values between 0 and 1
+        alpha_expr = (
+            f"if(lt(t,{start}),0,"
+            f"if(lt(t,{fade_in_end}),min(1,(t-{start})/{FADE_DURATION}),"
+            f"if(lt(t,{fade_out_start}),1,"
+            f"if(lt(t,{end}),max(0,({end}-t)/{FADE_DURATION}),"
+            f"0))))"
+        )
+        
+        # Use format=auto for overlay with alpha channel
+        filter_parts.append(
+            f"{current_stream}{edu_stream['stream']}"
+            f"overlay=x={x_pos}:y={y_pos}:alpha='{alpha_expr}'[tmp_{overlay_count}]"
+        )
+        current_stream = f"[tmp_{overlay_count}]"
+        overlay_count += 1
+    
+    if edu_images:
+        print(f"📷 Added {len(edu_scaled_streams)} educational image overlays")
     
     # Add captions on top
     if all_captions:
@@ -239,6 +325,10 @@ def create_video_with_audio_and_captions(
     for key, image_path in character_images.items():
         if image_path:
             cmd.extend(["-loop", "1", "-i", image_path])
+    
+    # Add educational image inputs
+    for edu_stream in edu_scaled_streams:
+        cmd.extend(["-loop", "1", "-i", edu_stream["path"]])
     
     # Add filter complex and output settings
     cmd.extend([
