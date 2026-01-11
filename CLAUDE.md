@@ -97,11 +97,42 @@ Script format uses `{t, c, s}` structure:
 ## API Endpoints
 
 - `POST /generate-video` - Generate subtopic videos from source
+- `POST /generate-transcript` - Generate transcript only (for image workflow)
+- `GET /transcripts/{id}` - Retrieve saved transcript
+- `POST /generate-video-with-images` - Generate video with educational images
 - `GET /videos` - User videos grouped by collection
 - `GET /collections` - List user collections
 - `GET /collections/{id}` - Collection details with videos
 - `POST /accounts` - Create user account
 - `POST /accounts/login` - Authenticate user
+
+## Educational Images Feature
+
+Videos can include educational images overlaid during specific dialogue lines. See `IMAGES_GUIDE.md` for complete documentation.
+
+**Workflow:**
+1. `POST /generate-transcript` - Generate and store transcript (24h TTL)
+2. Add `image` references to dialogue lines in the JSON
+3. `POST /generate-video-with-images` - Upload images and generate video
+
+**Image Configuration:**
+```json
+{
+  "caption": "Look at this diagram!",
+  "speaker": "STEWIE",
+  "image": {
+    "filename": "diagram.png",
+    "size": "large",        // "medium" (432px, top-right) or "large" (800px, top-center)
+    "start_time": 0.5,      // optional: delay after line starts
+    "duration": 3.0         // optional: display duration
+  }
+}
+```
+
+**Video Layout:**
+- Characters: Bottom-left (both Peter and Stewie)
+- Educational images: Top area (right for medium, center for large)
+- Captions: Center of screen
 
 ## Testing
 
