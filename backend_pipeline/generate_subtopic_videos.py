@@ -66,6 +66,85 @@ def load_subtopics(path: Path) -> List[Dict[str, Any]]:
     raise ValueError("JSON must contain 'subtopic_transcripts' or 'transcripts'.")
 
 
+def _build_educational_images_list(
+    dialogue: List[Dict[str, Any]],
+    audio_timings: List[Dict[str, Any]],
+    image_dir: Optional[Path],
+) -> List[Dict[str, Any]]:
+    """
+    Extract educational image configs from dialogue and calculate absolute timing.
+    
+    Args:
+        dialogue: List of dialogue lines with optional 'image' field
+        audio_timings: List of timing dicts with 'start' and 'end' for each line
+        image_dir: Directory containing the educational images
+    
+    Returns:
+        List of image configs with absolute timing:
+        [
+            {
+                "path": "/path/to/image.png",
+                "size": "medium" or "large",
+                "start": 1.5,  # absolute start time
+                "end": 4.2,    # absolute end time
+            }
+        ]
+    """
+    if not image_dir:
+        return []
+    
+    educational_images = []
+    
+    for i, line in enumerate(dialogue):
+        image_config = line.get("image")
+        if not image_config:
+            continue
+        
+        # Skip if we don't have timing for this line
+        if i >= len(audio_timings):
+            print(f"⚠️  Warning: No timing for dialogue line {i}, skipping image")
+            continue
+        
+        timing = audio_timings[i]
+        line_start = timing["start"]
+        line_end = timing["end"]
+        line_duration = line_end - line_start
+        
+        # Build image path
+        filename = image_config.get("filename")
+        if not filename:
+            continue
+        
+        image_path = image_dir / filename
+        if not image_path.exists():
+            print(f"⚠️  Warning: Image not found: {image_path}")
+            continue
+        
+        # Calculate timing
+        # start_time: offset from line start (default 0)
+        # duration: how long to show (default: entire line)
+        custom_start = image_config.get("start_time", 0) or 0
+        custom_duration = image_config.get("duration")
+        
+        absolute_start = line_start + custom_start
+        
+        if custom_duration:
+            absolute_end = min(absolute_start + custom_duration, line_end)
+        else:
+            absolute_end = line_end
+        
+        educational_images.append({
+            "path": str(image_path),
+            "size": image_config.get("size", "medium"),
+            "start": absolute_start,
+            "end": absolute_end,
+        })
+        
+        print(f"📷 Image '{filename}' scheduled: {absolute_start:.2f}s - {absolute_end:.2f}s ({image_config.get('size', 'medium')})")
+    
+    return educational_images
+
+
 def generate_videos_from_subtopic_list(
     subtopics: List[Dict[str, Any]],
     background_video: Path | str,
@@ -73,6 +152,7 @@ def generate_videos_from_subtopic_list(
     audio_dir: Path | str,
     user_id: int,
     collection_id: Optional[int] = None,
+    image_dir: Optional[Path | str] = None,
 ) -> List[Dict[str, str]]:
     """
     Generate videos from a list of subtopic transcripts.
@@ -84,6 +164,7 @@ def generate_videos_from_subtopic_list(
         audio_dir: Directory to store generated audio assets
         user_id: User ID for database entry
         collection_id: Optional existing collection ID. If not provided, creates new collection.
+        image_dir: Optional directory containing educational images referenced in dialogue
 
     Returns:
         List of dictionaries with video info for each subtopic
@@ -91,6 +172,7 @@ def generate_videos_from_subtopic_list(
     background_video_path = Path(background_video)
     output_dir = Path(output_dir)
     audio_dir = Path(audio_dir)
+    image_dir_path = Path(image_dir) if image_dir else None
 
     if not subtopics:
         raise ValueError("No subtopics found in transcript file.")
@@ -147,6 +229,13 @@ def generate_videos_from_subtopic_list(
             output_file=str(audio_output),
         )
 
+        # Build educational images list if image_dir is provided
+        educational_images = _build_educational_images_list(
+            dialogue=subtopic["dialogue"],
+            audio_timings=audio_result["timings"],
+            image_dir=image_dir_path,
+        )
+
         video_output = output_dir / f"{slug}.mp4"
         print("🎥 Creating video…")
         video_path = create_video_with_audio_and_captions(
@@ -154,6 +243,7 @@ def generate_videos_from_subtopic_list(
             audio_file=audio_result["audio_file"],
             caption_timings=audio_result["timings"],
             output_file=str(video_output),
+            educational_images=educational_images,
         )
         
         # Store video file info for batch upload
