@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A FastAPI application that generates educational videos from various input sources (YouTube, audio, PowerPoint, text). The pipeline extracts content, generates scripts using Gemini AI, creates audio via ElevenLabs TTS, and assembles videos with FFmpeg.
+A FastAPI application that generates educational videos from various input sources (YouTube, audio, PowerPoint, text). The pipeline extracts content, generates scripts using Gemini AI, creates audio via MiniMax TTS, and assembles videos with FFmpeg.
 
 ## Commands
 
@@ -40,8 +40,9 @@ docker compose build
 
 Required in `.env` (see `.env.example`):
 - `GEMINI_API_KEY` - Google Gemini API key for script generation
-- `ELEVENLABS_API_KEY` - ElevenLabs API key for TTS
-- `Peter_voiceId`, `Stewie_voiceId` - ElevenLabs voice IDs
+- `MINIMAX_API_KEY` - MiniMax API key for TTS
+- `MINIMAX_GROUP_ID` - MiniMax group ID for authentication
+- `MINIMAX_PETER_VOICE`, `MINIMAX_STEWIE_VOICE` - MiniMax voice IDs
 - `DATABASE_URL` - PostgreSQL connection string (Neon for prod, local for dev)
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` - For S3 video storage
 
@@ -60,7 +61,7 @@ The project separates fast operations (frontend) from slow, I/O-intensive operat
 - `script_generation/youtube.py` - YouTube transcript extraction helper
 
 **Backend Pipeline** (`backend_pipeline/`):
-- `audio_generation/elevenLabs.py` - TTS for subtopic videos
+- `audio_generation/minimax_tts.py` - TTS for subtopic videos using MiniMax API
 - `video_assembly/ffMpeg.py` - Video assembly for subtopics
 - `generate_subtopic_videos.py` - Orchestrates subtopic video creation
 
@@ -142,7 +143,7 @@ Tests are organized by feature in `tests/`:
 - `test_api.py` - FastAPI endpoint tests
 - `test_youtube.py` - YouTube transcript extraction
 
-Shared fixtures in `conftest.py` mock external services (Gemini, ElevenLabs, DB, S3, FFmpeg).
+Shared fixtures in `conftest.py` mock external services (Gemini, MiniMax, DB, S3, FFmpeg).
 
 ## Docker Setup
 
