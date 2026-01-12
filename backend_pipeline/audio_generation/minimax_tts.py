@@ -1,0 +1,279 @@
+"""MiniMax Text-to-Speech API integration for audio generation."""
+import os
+import json
+import requests
+import subprocess
+from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# MiniMax API configuration
+MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY")
+MINIMAX_GROUP_ID = os.getenv("MINIMAX_GROUP_ID")
+MINIMAX_API_URL = "https://api.minimax.io/v1/t2a_v2"
+
+# Voice mapping for different speakers
+VOICE_MAP = {
+    "PETER": os.getenv("MINIMAX_PETER_VOICE", "English_Persuasive_Man"),
+    "STEWIE": os.getenv("MINIMAX_STEWIE_VOICE", "English_Insightful_Speaker"),
+}
+
+
+def _call_minimax_tts(text: str, voice_id: str) -> tuple[bytes, float]:
+    """
+    Call MiniMax TTS API for a single text segment.
+    
+    Args:
+        text: Text to synthesize
+        voice_id: MiniMax voice ID
+        
+    Returns:
+        Tuple of (audio_bytes, duration_seconds)
+        
+    Raises:
+        Exception: If API call fails
+    """
+    if not MINIMAX_API_KEY:
+        raise ValueError("MINIMAX_API_KEY not found in environment variables")
+    
+    headers = {
+        "Authorization": f"Bearer {MINIMAX_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    
+    # Add GroupId as query parameter
+    params = {
+        "GroupId": MINIMAX_GROUP_ID,
+    }
+    
+    payload = {
+        "model": "speech-2.6-hd",
+        "text": text,
+        "stream": False,
+        "voice_setting": {
+            "voice_id": voice_id,
+            "speed": 1.0,
+            "vol": 1.0,
+            "pitch": 0,
+        },
+        "audio_setting": {
+            "sample_rate": 32000,
+            "bitrate": 128000,
+            "format": "mp3",
+            "channel": 1,
+        },
+        "output_format": "hex",
+    }
+    
+    response = requests.post(MINIMAX_API_URL, headers=headers, params=params, json=payload, timeout=30)
+    
+    # Check for errors
+    if response.status_code != 200:
+        raise Exception(
+            f"MiniMax API error (status {response.status_code}): {response.text}"
+        )
+    
+    result = response.json()
+    
+    # Check base response status
+    base_resp = result.get("base_resp", {})
+    if base_resp.get("status_code") != 0:
+        status_msg = base_resp.get("status_msg", "Unknown error")
+        raise Exception(f"MiniMax API error: {status_msg}")
+    
+    # Extract audio data
+    data = result.get("data", {})
+    if not data or "audio" not in data:
+        raise Exception("No audio data in MiniMax response")
+    
+    hex_audio = data["audio"]
+    audio_bytes = bytes.fromhex(hex_audio)
+    
+    # Get duration from extra_info
+    extra_info = result.get("extra_info", {})
+    duration_ms = extra_info.get("audio_length", 0)
+    duration_sec = duration_ms / 1000.0
+    
+    return audio_bytes, duration_sec
+
+
+def generate_audio_from_transcript(
+    transcript_data: Dict[str, Any], output_dir: str = "assets/audio/segments"
+) -> List[Dict[str, Any]]:
+    """
+    Generate audio files from transcript JSON data using MiniMax TTS.
+    
+    Args:
+        transcript_data: Dictionary containing 'transcripts' list with caption and speaker
+        output_dir: Directory to save audio segments
+    
+    Returns:
+        List of audio segment dictionaries with file paths and metadata
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    
+    audio_segments = []
+    
+    for idx, segment in enumerate(transcript_data["transcripts"]):
+        caption = segment["caption"]
+        speaker = segment["speaker"]
+        emotion = segment.get("emotion", "neutral")  # Default to neutral if not provided
+        
+        # Get voice ID for speaker
+        voice_id = VOICE_MAP.get(speaker, VOICE_MAP["PETER"])
+        
+        print(
+            f"🎙️  Generating audio {idx+1}/{len(transcript_data['transcripts'])}: "
+            f"{speaker} ({emotion})"
+        )
+        
+        try:
+            # Generate audio via MiniMax API
+            audio_bytes, duration = _call_minimax_tts(caption, voice_id)
+            
+            # Save audio to file
+            output_file = os.path.join(
+                output_dir, f"segment_{idx:03d}_{speaker.lower()}.mp3"
+            )
+            with open(output_file, "wb") as f:
+                f.write(audio_bytes)
+            
+            audio_segments.append(
+                {
+                    "index": idx,
+                    "file": output_file,
+                    "caption": caption,
+                    "speaker": speaker,
+                    "emotion": emotion,
+                    "duration": duration,
+                }
+            )
+            
+            print(f"   ✅ Saved: {output_file} ({duration:.2f}s)")
+            
+        except Exception as e:
+            print(f"   ❌ Failed to generate audio for segment {idx}: {e}")
+            raise
+    
+    return audio_segments
+
+
+def concatenate_audio_segments(
+    audio_segments: List[Dict[str, Any]], output_file: str = "assets/audio/full_audio.mp3"
+) -> Dict[str, Any]:
+    """
+    Concatenate all audio segments into a single file with metadata.
+    
+    Args:
+        audio_segments: List of audio segment dictionaries
+        output_file: Output file path for concatenated audio
+    
+    Returns:
+        Dictionary with audio file path and segment timings
+    """
+    # Create a file list for ffmpeg
+    segments_dir = os.path.dirname(audio_segments[0]["file"])
+    list_file = os.path.join(segments_dir, "filelist.txt")
+    
+    with open(list_file, "w") as f:
+        for segment in audio_segments:
+            f.write(f"file '{os.path.basename(segment['file'])}'\n")
+    
+    # Make sure output directory exists
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    
+    # Get absolute paths for ffmpeg
+    abs_list_file = os.path.abspath(list_file)
+    abs_output_file = os.path.abspath(output_file)
+    
+    # Concatenate using ffmpeg
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        abs_list_file,
+        "-c",
+        "copy",
+        abs_output_file,
+    ]
+    
+    print(f"🔗 Concatenating {len(audio_segments)} audio segments...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        print(f"❌ FFmpeg concatenation failed!")
+        print(f"   Command: {' '.join(cmd)}")
+        print(f"   stderr: {result.stderr}")
+        raise Exception(f"FFmpeg concatenation failed: {result.stderr}")
+    
+    # Calculate timings based on durations from MiniMax API
+    timings = []
+    current_time = 0.0
+    
+    for segment in audio_segments:
+        duration = segment.get("duration", 0.0)
+        
+        if duration == 0.0:
+            print(f"⚠️  Warning: No duration info for segment {segment['index']}")
+            continue
+        
+        timings.append(
+            {
+                "index": segment["index"],
+                "start": current_time,
+                "end": current_time + duration,
+                "duration": duration,
+                "caption": segment["caption"],
+                "speaker": segment["speaker"],
+                "emotion": segment.get("emotion", "neutral"),
+            }
+        )
+        
+        current_time += duration
+    
+    print(f"✅ Full audio saved: {output_file} (Total duration: {current_time:.2f}s)")
+    
+    return {
+        "audio_file": output_file,
+        "total_duration": current_time,
+        "timings": timings,
+    }
+
+
+if __name__ == "__main__":
+    # Test script
+    print("Testing MiniMax TTS integration...")
+    
+    # Sample transcript
+    test_transcript = {
+        "transcripts": [
+            {"caption": "Hey Stewie, did you know about photosynthesis?", "speaker": "PETER"},
+            {"caption": "Of course I do, Peter. It's elementary biology.", "speaker": "STEWIE"},
+            {"caption": "Plants use sunlight to make food!", "speaker": "PETER"},
+        ]
+    }
+    
+    # Test directory
+    test_output_dir = "test_audio_minimax"
+    
+    try:
+        # Generate audio segments
+        segments = generate_audio_from_transcript(test_transcript, test_output_dir)
+        
+        # Concatenate segments
+        result = concatenate_audio_segments(segments, f"{test_output_dir}/full.mp3")
+        
+        print(f"\n🎉 Test complete! Total duration: {result['total_duration']:.2f} seconds")
+        print(f"📄 Generated {len(result['timings'])} audio segments")
+        print(f"\nTest files saved to: {test_output_dir}/")
+        
+    except Exception as e:
+        print(f"\n❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
