@@ -9,15 +9,23 @@ Usage:
     python cli.py --source notes.txt --source-type text
     python cli.py --source "https://youtube.com/watch?v=..." --source-type youtube
     python cli.py --source slides.pptx --source-type pptx
+    
+    # Use local storage for development
+    python cli.py --source "test content" --source-type text --storage local
+    
+    # Show storage statistics
+    python cli.py --storage-stats
 """
 
 import argparse
+import os
 from pathlib import Path
 from uuid import uuid4
 
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_subtopic_videos import generate_videos_from_subtopic_list
-from save_to_db.collection_service import create_collection, generate_collection_title
+from services.collection_service import create_collection, generate_collection_title
+from services.video_service import VideoService
 
 
 def generate_complete_collection(
@@ -27,6 +35,7 @@ def generate_complete_collection(
     background_dir: Path,
     output_dir: Path,
     audio_dir: Path,
+    storage_backend: str | None = None,
 ) -> dict:
     """
     Generate a video collection from source material.
@@ -38,6 +47,7 @@ def generate_complete_collection(
         background_dir: Directory containing background videos
         output_dir: Base directory for output videos
         audio_dir: Base directory for generated audio
+        storage_backend: Storage backend ('s3' or 'local'). Uses env var if not set.
 
     Returns:
         Dictionary with collection info and video results
@@ -48,10 +58,15 @@ def generate_complete_collection(
     if source_type == "audio":
         source_type = "audio/mp3"
 
+    # Show storage backend info
+    video_service = VideoService(storage_backend=storage_backend)
+    storage_name = video_service.storage.backend_name
+
     print(f"\n{'='*60}")
     print(f"Starting video generation pipeline")
     print(f"Source: {source[:100]}{'...' if len(source) > 100 else ''}")
     print(f"Type: {source_type}")
+    print(f"Storage: {storage_name}")
     print(f"Session: {session_id}")
     print(f"{'='*60}\n")
 
@@ -83,6 +98,7 @@ def generate_complete_collection(
         audio_dir=subtopic_audio_dir,
         user_id=user_id,
         collection_id=collection_id,
+        storage_backend=storage_backend,
     )
 
     print(f"\n{'='*60}")
@@ -96,7 +112,24 @@ def generate_complete_collection(
         "total_videos": len(subtopic_results),
         "subtopic_results": subtopic_results,
         "session_id": session_id,
+        "storage_backend": storage_name,
     }
+
+
+def show_storage_stats(storage_backend: str | None = None):
+    """Display storage statistics."""
+    video_service = VideoService(storage_backend=storage_backend)
+    stats = video_service.get_storage_stats()
+    
+    print(f"\n{'='*60}")
+    print("Storage Statistics")
+    print(f"{'='*60}")
+    print(f"Backend: {stats['backend']}")
+    print(f"Total Files: {stats['total_files']}")
+    print(f"Total Size: {stats['total_size_human']}")
+    if 'storage_path' in stats:
+        print(f"Storage Path: {stats['storage_path']}")
+    print(f"{'='*60}\n")
 
 
 def parse_args() -> argparse.Namespace:
@@ -109,16 +142,21 @@ Examples:
   python cli.py --source notes.txt --source-type text
   python cli.py --source "https://youtube.com/watch?v=abc" --source-type youtube
   python cli.py --source slides.pptx --source-type pptx
+  
+  # Use local storage for development
+  python cli.py --source "test content" --source-type text --storage local
+  
+  # Show storage statistics
+  python cli.py --storage-stats
+  python cli.py --storage-stats --storage local
         """,
     )
     parser.add_argument(
         "--source",
-        required=True,
         help="Source file path, text content, or YouTube URL",
     )
     parser.add_argument(
         "--source-type",
-        required=True,
         choices=["audio", "text", "youtube", "pptx"],
         help="Type of source material",
     )
@@ -146,11 +184,32 @@ Examples:
         default=1,
         help="User ID for database entries (default: 1)",
     )
+    parser.add_argument(
+        "--storage",
+        choices=["s3", "local"],
+        help="Storage backend to use (default: from STORAGE_BACKEND env var or 's3')",
+    )
+    parser.add_argument(
+        "--storage-stats",
+        action="store_true",
+        help="Show storage statistics and exit",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    
+    # Handle storage stats command
+    if args.storage_stats:
+        show_storage_stats(args.storage)
+        return
+
+    # Require source and source-type for video generation
+    if not args.source or not args.source_type:
+        print("Error: --source and --source-type are required for video generation")
+        print("Use --storage-stats to view storage statistics")
+        return
 
     # Validate source exists for file-based inputs
     if args.source_type in ("audio", "pptx"):
@@ -179,12 +238,14 @@ def main():
         background_dir=args.background,
         output_dir=args.output_dir,
         audio_dir=args.audio_dir,
+        storage_backend=args.storage,
     )
 
     print("\n=== Summary ===")
     print(f"Collection ID: {result['collection_id']}")
     print(f"Collection Title: {result['collection_title']}")
     print(f"Total Videos: {result['total_videos']}")
+    print(f"Storage Backend: {result['storage_backend']}")
     print(f"\nSubtopic Videos:")
     for item in result["subtopic_results"]:
         print(f"  - {item['subtopic_title']}: video_id={item['video_id']}")

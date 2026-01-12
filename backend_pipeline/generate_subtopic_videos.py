@@ -15,8 +15,8 @@ import os
 import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from save_to_db.save_video import add_video
-from save_to_db.collection_service import create_collection, generate_collection_title, get_collection
+from services.video_service import VideoService
+from services.collection_service import create_collection, generate_collection_title, get_collection
 
 from backend_pipeline.audio_generation.minimax_tts import (
     generate_audio_from_transcript,
@@ -153,6 +153,7 @@ def generate_videos_from_subtopic_list(
     user_id: int,
     collection_id: Optional[int] = None,
     image_dir: Optional[Path | str] = None,
+    storage_backend: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     """
     Generate videos from a list of subtopic transcripts.
@@ -165,6 +166,7 @@ def generate_videos_from_subtopic_list(
         user_id: User ID for database entry
         collection_id: Optional existing collection ID. If not provided, creates new collection.
         image_dir: Optional directory containing educational images referenced in dialogue
+        storage_backend: Storage backend override ('s3' or 'local'). Uses env var if not set.
 
     Returns:
         List of dictionaries with video info for each subtopic
@@ -254,12 +256,14 @@ def generate_videos_from_subtopic_list(
             "audio_file": audio_result["audio_file"],
         })
 
-    # Step 3: Upload all videos to S3 and save to database with collection_id
-    print(f"\n☁️  Uploading {len(video_files)} videos to S3 and database...")
+    # Step 3: Upload all videos to storage and save to database with collection_id
+    video_service = VideoService(storage_backend=storage_backend)
+    storage_name = video_service.storage.backend_name
+    print(f"\n☁️  Uploading {len(video_files)} videos to {storage_name}...")
     
     for video_info in video_files:
         with open(video_info["path"], "rb") as video_file:
-            video_id = add_video(
+            result = video_service.save_video(
                 user_id=user_id,
                 file_obj=video_file,
                 original_filename=video_info["path"].name,
@@ -273,11 +277,12 @@ def generate_videos_from_subtopic_list(
                 "subtopic_title": video_info["subtopic_title"],
                 "video_path": str(video_info["path"]),
                 "audio_file": video_info["audio_file"],
-                "video_id": video_id,
+                "video_id": result["video_id"],
                 "collection_id": collection_id,
+                "storage_key": result["storage_key"],
             }
         )
-        print(f"✅ Uploaded video_id {video_id} for '{video_info['subtopic_title']}'")
+        print(f"✅ Uploaded video_id {result['video_id']} for '{video_info['subtopic_title']}'")
 
     print(f"\n🎉 All {len(results)} videos uploaded to collection '{collection_title}'")
     return results

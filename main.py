@@ -12,15 +12,15 @@ from uuid import uuid4
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query
 from typing import Literal
 
-from save_to_db.save_video import get_user_videos, get_collection_videos
-from save_to_db.collection_service import get_collection, get_user_collections, find_last_collection
+from services.video_service import VideoService, get_user_videos, get_collection_videos
+from services.collection_service import get_collection, get_user_collections, find_last_collection
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_subtopic_videos import (
     generate_videos_from_subtopic_list,
 )
-import save_to_db.account_service as account_service
+import services.account_service as account_service
 
 BACKGROUND_VIDEOS_DIR = Path("assets/videos")
 OUTPUT_DIR = Path("assets/output")

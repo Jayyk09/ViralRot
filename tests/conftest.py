@@ -15,6 +15,8 @@ def mock_env_vars(monkeypatch):
     monkeypatch.setenv("MINIMAX_PETER_VOICE", "test-peter-voice")
     monkeypatch.setenv("MINIMAX_STEWIE_VOICE", "test-stewie-voice")
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.setenv("LOCAL_STORAGE_DIR", "/tmp/test-storage")
 
 
 @pytest.fixture
@@ -113,10 +115,29 @@ def mock_db():
 
 @pytest.fixture
 def mock_s3():
-    """Mock S3 client."""
-    with patch("save_to_db.save_video.s3") as mock:
-        mock.generate_presigned_url.return_value = "https://s3.example.com/video.mp4"
-        yield mock
+    """Mock S3 client (legacy fixture - use mock_storage_backend for new code)."""
+    with patch("storage.s3_backend.boto3") as mock:
+        mock_client = MagicMock()
+        mock_client.generate_presigned_url.return_value = "https://s3.example.com/video.mp4"
+        mock.client.return_value = mock_client
+        yield mock_client
+
+
+@pytest.fixture
+def mock_storage_backend():
+    """Mock storage backend for VideoService tests."""
+    with patch("services.video_service.get_storage_backend") as mock_factory:
+        mock_storage = MagicMock()
+        mock_storage.upload.return_value = None
+        mock_storage.generate_url.return_value = "https://storage.example.com/video.mp4"
+        mock_storage.delete.return_value = None
+        mock_storage.get_stats.return_value = {
+            "backend": "Mock Storage",
+            "total_files": 5,
+            "total_size_human": "100.00 MB"
+        }
+        mock_factory.return_value = mock_storage
+        yield mock_storage
 
 
 @pytest.fixture
