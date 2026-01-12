@@ -156,6 +156,9 @@ async def _run_blocking(func, *args, **kwargs):
     return await asyncio.to_thread(func, *args, **kwargs)
 
 
+def get_current_user_id() -> int:
+    # TODO: replace with your real auth
+    return 1
 
 
 def _validate_background_video():
@@ -192,7 +195,6 @@ def _is_json_transcript(text: str) -> bool:
     # Check if it starts with { or [ (JSON object or array)
     if text.startswith('{') or text.startswith('['):
         try:
-            import json
             json.loads(text)
             return True
         except json.JSONDecodeError:
@@ -660,11 +662,6 @@ async def _generate_videos_with_images(user_id, subtopics, image_dir, prefix):
         None,  # collection_id
         image_dir,  # Pass image directory (can be None)
     )
-
-
-def get_current_user_id() -> int:
-    # TODO: replace with your real auth
-    return 1
 
 
 def _extract_subtopic_number(video: dict) -> int:
