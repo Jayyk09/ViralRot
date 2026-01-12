@@ -18,7 +18,7 @@ def create_collection(
         user_id: The user who owns this collection
         collection_title: Title for the collection
 
-    Returns:
+
         The new collection id
     """
     conn = get_db_conn()
