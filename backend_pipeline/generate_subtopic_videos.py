@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from save_to_db.save_video import add_video
 from save_to_db.collection_service import create_collection, generate_collection_title, get_collection
 
-from backend_pipeline.audio_generation.elevenLabs import (
+from backend_pipeline.audio_generation.minimax_tts import (
     generate_audio_from_transcript,
     concatenate_audio_segments,
 )
