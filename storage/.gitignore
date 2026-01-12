@@ -1,0 +1,8 @@
+# Local storage files (development only)
+videos/
+*.mp4
+*.mp3
+*.wav
+
+# Keep the directory structure
+!.gitkeep
