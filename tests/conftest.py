@@ -10,9 +10,10 @@ import os
 def mock_env_vars(monkeypatch):
     """Set up test environment variables."""
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
-    monkeypatch.setenv("ELEVENLABS_API_KEY", "test-elevenlabs-key")
-    monkeypatch.setenv("Peter_voiceId", "test-peter-voice")
-    monkeypatch.setenv("Stewie_voiceId", "test-stewie-voice")
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-minimax-key")
+    monkeypatch.setenv("MINIMAX_GROUP_ID", "test-group-id")
+    monkeypatch.setenv("MINIMAX_PETER_VOICE", "test-peter-voice")
+    monkeypatch.setenv("MINIMAX_STEWIE_VOICE", "test-stewie-voice")
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 
 
@@ -69,10 +70,26 @@ def temp_audio_file(temp_output_dir):
 
 
 @pytest.fixture
-def mock_elevenlabs():
-    """Mock ElevenLabs API calls."""
-    with patch("backend_pipeline.audio_generation.elevenLabs.client") as mock:
-        mock.text_to_speech.convert.return_value = iter([b"fake-audio-data"])
+def mock_minimax_tts():
+    """Mock MiniMax TTS API calls."""
+    with patch("backend_pipeline.audio_generation.minimax_tts.requests.post") as mock:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {
+                "audio": "666616b652d617564696f",  # hex-encoded "fake-audio"
+                "status": 2
+            },
+            "extra_info": {
+                "audio_length": 3000,  # 3 seconds in milliseconds
+                "audio_format": "mp3"
+            },
+            "base_resp": {
+                "status_code": 0,
+                "status_msg": "success"
+            }
+        }
+        mock.return_value = mock_response
         yield mock
 
 
