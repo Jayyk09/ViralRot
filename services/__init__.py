@@ -4,6 +4,7 @@ This package contains:
 - video_service: High-level video operations (storage + database)
 - collection_service: Collection management
 - account_service: User account management
+- progress_service: Job progress tracking with WebSocket support
 - repositories/: Low-level database access layer
 """
 from .video_service import VideoService, get_user_videos, get_collection_videos
@@ -14,6 +15,7 @@ from .collection_service import (
     find_last_collection,
     generate_collection_title,
 )
+from .progress_service import ProgressService
 from . import account_service
 
 __all__ = [
@@ -27,6 +29,8 @@ __all__ = [
     "get_user_collections",
     "find_last_collection",
     "generate_collection_title",
+    # Progress service
+    "ProgressService",
     # Account service module
     "account_service",
 ]
