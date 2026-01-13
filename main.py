@@ -270,6 +270,358 @@ async def _run_blocking(func, *args, **kwargs):
     return await asyncio.to_thread(func, *args, **kwargs)
 
 
+# ============ Async Job Endpoints (with Progress Tracking) ============
+
+@app.post("/jobs/generate-transcript")
+async def create_transcript_job(
+    background_tasks: BackgroundTasks,
+    source_type: str = Form(..., description="youtube|audio|text|pptx"),
+    user_id: int = Form(1),
+    content: str | None = Form(None, description="Text content or YouTube URL"),
+    file: UploadFile | None = File(None, description="Audio or PPTX file"),
+):
+    """
+    Generate transcript from source material (ASYNC with progress tracking).
+    
+    Returns job_id immediately. Connect to WebSocket for real-time progress.
+    When complete, result contains transcript_id for use with /jobs/generate-video.
+    
+    Workflow:
+    1. POST to this endpoint with source material
+    2. Connect to WebSocket: /ws/progress/{job_id}
+    3. Receive progress updates (extracting_content → generating_dialogue)
+    4. Get final result with transcript_id and transcript JSON
+    
+    Stages:
+    - extracting_content: Parse source (YouTube/audio/PPTX)
+    - generating_dialogue: Create dialogue with Gemini AI
+    
+    Returns:
+        job_id: Use with /ws/progress/{job_id} for real-time updates
+    """
+    # Validate source type
+    valid_types = {"youtube", "audio", "text", "pptx"}
+    if source_type.lower() not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid source_type. Must be one of: {', '.join(valid_types)}"
+        )
+    
+    # Prepare source input
+    temp_file_path = None
+    transcript_source = None
+    transcript_type = None
+    
+    try:
+        if source_type == "audio":
+            if not file:
+                raise HTTPException(status_code=400, detail="Audio file required for source_type='audio'")
+            suffix = Path(file.filename or "").suffix or ".mp3"
+            temp_file_path = TEMP_UPLOAD_DIR / f"{uuid4().hex}{suffix}"
+            _move_upload_to_disk(file, temp_file_path)
+            transcript_source = str(temp_file_path)
+            transcript_type = "audio/mp3"
+        elif source_type == "text":
+            if not content:
+                raise HTTPException(status_code=400, detail="Content required for source_type='text'")
+            transcript_source = content
+            transcript_type = "text"
+        elif source_type == "youtube":
+            if not content:
+                raise HTTPException(status_code=400, detail="YouTube URL required for source_type='youtube'")
+            transcript_source = content
+            transcript_type = "youtube"
+        elif source_type == "pptx":
+            if not file:
+                raise HTTPException(status_code=400, detail="PPTX file required for source_type='pptx'")
+            temp_file_path = TEMP_UPLOAD_DIR / f"{uuid4().hex}.pptx"
+            _move_upload_to_disk(file, temp_file_path)
+            transcript_source = str(temp_file_path)
+            transcript_type = "pptx"
+        
+        # Create job immediately
+        job_id = ProgressService.create_transcript_job(user_id=user_id)
+        
+        # Start async processing in background
+        background_tasks.add_task(
+            _process_transcript_job,
+            job_id=job_id,
+            user_id=user_id,
+            transcript_source=transcript_source,
+            transcript_type=transcript_type,
+            source_type=source_type,
+            temp_file_path=str(temp_file_path) if temp_file_path else None,
+        )
+        
+        return {
+            "job_id": job_id,
+            "job_type": "transcript_generation",
+            "message": "Transcript generation started. Connect to WebSocket for progress.",
+            "websocket_url": f"/ws/progress/{job_id}",
+            "status_url": f"/jobs/{job_id}/progress",
+        }
+    
+    except HTTPException:
+        # Clean up temp file if validation fails
+        if temp_file_path and temp_file_path.exists():
+            temp_file_path.unlink()
+        raise
+
+
+async def _process_transcript_job(
+    job_id: str,
+    user_id: int,
+    transcript_source: str,
+    transcript_type: str,
+    source_type: str,
+    temp_file_path: Optional[str],
+):
+    """Background task for transcript generation with progress updates."""
+    try:
+        # Stage 1: Extracting content
+        ProgressService.update_job(
+            job_id=job_id,
+            status="processing",
+            current_stage="extracting_content",
+        )
+        
+        # Small delay to allow WebSocket connection
+        await asyncio.sleep(0.1)
+        
+        # Stage 2: Generating dialogue
+        ProgressService.update_job(
+            job_id=job_id,
+            current_stage="generating_dialogue",
+        )
+        
+        # Call the transcript extraction
+        subtopics = await _run_blocking(
+            extract_transcripts,
+            transcript_source,
+            transcript_type,
+        )
+        
+        if not subtopics:
+            ProgressService.update_job(
+                job_id=job_id,
+                status="failed",
+                error="No subtopics generated from source content. The AI model returned empty results.",
+            )
+            return
+        
+        # Build transcript data with metadata
+        transcript_data = {
+            "subtopic_transcripts": [s.model_dump() for s in subtopics]
+        }
+        _add_metadata_to_transcript(transcript_data)
+        
+        # Save to memory storage (reuse existing storage for transcript lookup)
+        transcript_id = save_transcript_memory(user_id, transcript_data, source_type)
+        
+        # Complete job with result
+        ProgressService.update_job(
+            job_id=job_id,
+            status="completed",
+            result={
+                "transcript_id": transcript_id,
+                "expires_in_hours": 24,
+                "subtopic_count": len(subtopics),
+                "subtopic_transcripts": transcript_data["subtopic_transcripts"],
+            },
+        )
+    
+    except Exception as e:
+        ProgressService.update_job(
+            job_id=job_id,
+            status="failed",
+            error=f"{type(e).__name__}: {str(e)}",
+        )
+    
+    finally:
+        # Cleanup temp file
+        if temp_file_path:
+            temp_path = Path(temp_file_path)
+            if temp_path.exists():
+                temp_path.unlink()
+
+
+@app.post("/jobs/generate-video")
+async def create_video_job(
+    background_tasks: BackgroundTasks,
+    transcript_id: str = Form(..., description="Transcript ID from /jobs/generate-transcript"),
+    user_id: int = Form(1),
+    images: List[UploadFile] = File(default=[], description="Optional educational images"),
+    updated_transcript: str | None = Form(None, description="Optional: Modified transcript JSON with image references"),
+):
+    """
+    Generate videos from transcript (ASYNC with progress tracking).
+    
+    Returns job_id immediately. Connect to WebSocket for real-time progress.
+    
+    Workflow:
+    1. Get transcript_id from /jobs/generate-transcript
+    2. (Optional) Edit transcript and add image references
+    3. POST to this endpoint with transcript_id, optional images, and updated transcript
+    4. Connect to WebSocket: /ws/progress/{job_id}
+    5. Receive progress updates for each subtopic
+    6. Get final result with collection_id and video URLs
+    
+    Stages (per subtopic):
+    - preparing_assets: Process uploaded images
+    - audio_generation: Create TTS audio with MiniMax
+    - video_assembly: FFmpeg overlay with captions
+    - uploading: Upload to S3
+    
+    Returns:
+        job_id: Use with /ws/progress/{job_id} for real-time updates
+    """
+    image_dir = None
+    
+    try:
+        # Retrieve transcript from memory
+        saved_transcript = get_transcript_memory(transcript_id, user_id)
+        if not saved_transcript:
+            raise HTTPException(
+                status_code=404,
+                detail="Transcript not found, expired (24h TTL), or access denied"
+            )
+        
+        # Use updated transcript if provided, otherwise use saved
+        if updated_transcript:
+            try:
+                transcript_data = json.loads(updated_transcript)
+            except json.JSONDecodeError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid transcript JSON format: {str(e)}"
+                )
+        else:
+            transcript_data = saved_transcript["data"]
+        
+        # Handle optional images
+        session_id = uuid4().hex
+        if images and len(images) > 0 and images[0].filename:
+            _validate_image_files(images)
+            image_dir = _save_uploaded_images(images, session_id)
+            _validate_image_references(transcript_data, image_dir)
+        
+        # Get subtopic info
+        subtopics = transcript_data.get("subtopic_transcripts", [])
+        if not subtopics:
+            raise HTTPException(
+                status_code=400,
+                detail="Transcript contains no subtopics"
+            )
+        
+        total_subtopics = len(subtopics)
+        subtopic_titles = [s.get("subtopic_title", f"Subtopic {i+1}") for i, s in enumerate(subtopics)]
+        
+        # Create job with subtopic info
+        job_id = ProgressService.create_video_job(
+            user_id=user_id,
+            total_subtopics=total_subtopics,
+            subtopic_titles=subtopic_titles,
+        )
+        
+        # Start async processing
+        background_tasks.add_task(
+            _process_video_job,
+            job_id=job_id,
+            user_id=user_id,
+            transcript_data=transcript_data,
+            image_dir=str(image_dir) if image_dir else None,
+            session_id=session_id,
+        )
+        
+        return {
+            "job_id": job_id,
+            "job_type": "video_generation",
+            "total_subtopics": total_subtopics,
+            "message": "Video generation started. Connect to WebSocket for progress.",
+            "websocket_url": f"/ws/progress/{job_id}",
+            "status_url": f"/jobs/{job_id}/progress",
+        }
+    
+    except HTTPException:
+        # Clean up image dir if validation fails
+        if image_dir and image_dir.exists():
+            shutil.rmtree(image_dir, ignore_errors=True)
+        raise
+
+
+async def _process_video_job(
+    job_id: str,
+    user_id: int,
+    transcript_data: dict,
+    image_dir: Optional[str],
+    session_id: str,
+):
+    """Background task for video generation with progress updates."""
+    try:
+        _validate_background_video()
+        
+        # Update status to processing
+        ProgressService.update_job(
+            job_id=job_id,
+            status="processing",
+            current_stage="preparing_assets",
+            current_subtopic=1,
+        )
+        
+        # Small delay to allow WebSocket connection
+        await asyncio.sleep(0.1)
+        
+        # Generate videos with progress callback
+        session_id_full = uuid4().hex
+        video_output_dir = OUTPUT_DIR / f"job_{session_id_full}"
+        audio_output_dir = GENERATED_AUDIO_DIR / f"job_{session_id_full}"
+        
+        video_results = await _run_blocking(
+            generate_videos_from_subtopic_list,
+            transcript_data["subtopic_transcripts"],
+            str(BACKGROUND_VIDEOS_DIR),
+            str(video_output_dir),
+            str(audio_output_dir),
+            user_id,
+            None,  # collection_id (auto-create)
+            image_dir,
+            None,  # storage_backend
+            ProgressService.update_job,  # progress_callback
+            job_id,  # job_id for progress
+        )
+        
+        # Get collection info
+        collection_dict = await _run_blocking(find_last_collection, user_id)
+        collection_id = collection_dict["id"] if collection_dict else None
+        
+        # Complete job
+        ProgressService.update_job(
+            job_id=job_id,
+            status="completed",
+            result={
+                "collection_id": collection_id,
+                "video_count": len(video_results),
+                "results": video_results,
+            },
+        )
+    
+    except Exception as e:
+        ProgressService.update_job(
+            job_id=job_id,
+            status="failed",
+            error=f"{type(e).__name__}: {str(e)}",
+        )
+    
+    finally:
+        # Cleanup image dir
+        if image_dir:
+            image_path = Path(image_dir)
+            if image_path.exists():
+                shutil.rmtree(image_path, ignore_errors=True)
+
+
+# ============ Helper Functions ============
+
 def _validate_background_video():
     """Validate that the background videos directory exists and has videos."""
     if not BACKGROUND_VIDEOS_DIR.exists():

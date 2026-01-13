@@ -14,7 +14,7 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from services.video_service import VideoService
 from services.collection_service import create_collection, generate_collection_title, get_collection
 
@@ -154,6 +154,8 @@ def generate_videos_from_subtopic_list(
     collection_id: Optional[int] = None,
     image_dir: Optional[Path | str] = None,
     storage_backend: Optional[str] = None,
+    progress_callback: Optional[Callable] = None,
+    job_id: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     """
     Generate videos from a list of subtopic transcripts.
@@ -167,6 +169,9 @@ def generate_videos_from_subtopic_list(
         collection_id: Optional existing collection ID. If not provided, creates new collection.
         image_dir: Optional directory containing educational images referenced in dialogue
         storage_backend: Storage backend override ('s3' or 'local'). Uses env var if not set.
+        progress_callback: Optional callback function for progress updates.
+                          Called with (job_id, current_stage, current_subtopic, subtopic_title)
+        job_id: Job ID for progress tracking (required if progress_callback is provided)
 
     Returns:
         List of dictionaries with video info for each subtopic
@@ -204,20 +209,40 @@ def generate_videos_from_subtopic_list(
     results = []
     
     for index, subtopic in enumerate(subtopics, start=1):
+        subtopic_title = subtopic["subtopic_title"]
+        
+        # === PROGRESS: Preparing assets ===
+        if progress_callback and job_id:
+            progress_callback(
+                job_id=job_id,
+                current_stage="preparing_assets",
+                current_subtopic=index,
+                subtopic_title=subtopic_title,
+            )
+        
         # Select background video for this subtopic
         if is_directory:
             current_bg_video = get_random_background_video(background_video_path)
             print(f"🎥 Selected background: {current_bg_video.name}")
         else:
             current_bg_video = background_video_path
-        slug = slugify(subtopic["subtopic_title"])
-        print(f"\n=== Subtopic {index}/{len(subtopics)}: {subtopic['subtopic_title']} ===")
+        slug = slugify(subtopic_title)
+        print(f"\n=== Subtopic {index}/{len(subtopics)}: {subtopic_title} ===")
 
         transcripts_payload = {"transcripts": subtopic["dialogue"]}
 
         segment_dir = audio_dir / slug / "segments"
         segment_dir.mkdir(parents=True, exist_ok=True)
 
+        # === PROGRESS: Audio generation ===
+        if progress_callback and job_id:
+            progress_callback(
+                job_id=job_id,
+                current_stage="audio_generation",
+                current_subtopic=index,
+                subtopic_title=subtopic_title,
+            )
+        
         print("🎙️  Generating audio segments…")
         audio_segments = generate_audio_from_transcript(
             transcripts_payload,
@@ -238,6 +263,15 @@ def generate_videos_from_subtopic_list(
             image_dir=image_dir_path,
         )
 
+        # === PROGRESS: Video assembly ===
+        if progress_callback and job_id:
+            progress_callback(
+                job_id=job_id,
+                current_stage="video_assembly",
+                current_subtopic=index,
+                subtopic_title=subtopic_title,
+            )
+
         video_output = output_dir / f"{slug}.mp4"
         print("🎥 Creating video…")
         video_path = create_video_with_audio_and_captions(
@@ -251,7 +285,7 @@ def generate_videos_from_subtopic_list(
         # Store video file info for batch upload
         video_files.append({
             "path": video_output,
-            "subtopic_title": subtopic["subtopic_title"],
+            "subtopic_title": subtopic_title,
             "index": index,
             "audio_file": audio_result["audio_file"],
         })
@@ -262,6 +296,15 @@ def generate_videos_from_subtopic_list(
     print(f"\n☁️  Uploading {len(video_files)} videos to {storage_name}...")
     
     for video_info in video_files:
+        # === PROGRESS: Uploading ===
+        if progress_callback and job_id:
+            progress_callback(
+                job_id=job_id,
+                current_stage="uploading",
+                current_subtopic=video_info["index"],
+                subtopic_title=video_info["subtopic_title"],
+            )
+        
         with open(video_info["path"], "rb") as video_file:
             result = video_service.save_video(
                 user_id=user_id,
