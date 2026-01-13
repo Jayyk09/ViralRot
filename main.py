@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
 from typing import Literal
 
 from services.video_service import VideoService, get_user_videos, get_collection_videos
 from services.collection_service import get_collection, get_user_collections, find_last_collection
+from services.progress_service import ProgressService
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
@@ -152,13 +153,121 @@ async def health_check():
     return {"status": "healthy"}
 
 
-async def _run_blocking(func, *args, **kwargs):
-    return await asyncio.to_thread(func, *args, **kwargs)
-
+# ============ WebSocket Progress Endpoint ============
 
 def get_current_user_id() -> int:
-    # TODO: replace with your real auth
+    """Get current user ID. TODO: Replace with real auth."""
     return 1
+
+
+@app.websocket("/ws/progress/{job_id}")
+async def websocket_progress(websocket: WebSocket, job_id: str):
+    """
+    WebSocket endpoint for real-time job progress updates.
+    
+    Connect to this endpoint after starting a video/transcript generation job
+    to receive real-time progress updates.
+    
+    Message format:
+    {
+        "type": "progress" | "completed" | "error",
+        "job_id": "abc123",
+        "job_type": "transcript_generation" | "video_generation",
+        "status": "queued" | "processing" | "completed" | "failed",
+        "percentage": 45,
+        "message": "Generating audio for subtopic 2/5...",
+        "current_stage": "audio_generation",
+        "current_subtopic": 2,  // video jobs only
+        "total_subtopics": 5,   // video jobs only
+        "result": {...},        // on completion
+        "error": "..."          // on failure
+    }
+    """
+    await websocket.accept()
+    
+    # Verify job exists
+    job = ProgressService.get_job(job_id)
+    if not job:
+        await websocket.send_json({
+            "type": "error",
+            "job_id": job_id,
+            "error": "Job not found or expired"
+        })
+        await websocket.close()
+        return
+    
+    # Register connection
+    ProgressService.add_websocket(job_id, websocket)
+    
+    # Send current state immediately
+    initial_update = ProgressService.get_initial_update(job)
+    await websocket.send_text(initial_update.model_dump_json())
+    
+    try:
+        # Keep connection alive until client disconnects
+        # Also handle ping/pong for connection health
+        while True:
+            try:
+                # Wait for messages (client might send pings)
+                message = await websocket.receive_text()
+                # Echo back for ping/pong
+                if message == "ping":
+                    await websocket.send_text("pong")
+            except WebSocketDisconnect:
+                break
+    finally:
+        ProgressService.remove_websocket(job_id, websocket)
+
+
+@app.get("/jobs/{job_id}/progress")
+async def get_job_progress(
+    job_id: str,
+    user_id: int = Depends(get_current_user_id),
+):
+    """
+    HTTP fallback to check job progress without WebSocket.
+    
+    Use this endpoint for polling if WebSocket is not available.
+    Poll every 1-2 seconds for responsive updates.
+    
+    Returns:
+        Current progress state including percentage, stage, and result (if completed).
+    """
+    job = ProgressService.get_job(job_id)
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    
+    # Verify ownership
+    if job.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this job")
+    
+    response = {
+        "job_id": job.job_id,
+        "job_type": job.job_type,
+        "status": job.status,
+        "percentage": job.percentage,
+        "message": job.message,
+        "current_stage": job.current_stage,
+        "created_at": job.created_at.isoformat(),
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "error": job.error,
+    }
+    
+    # Add video-specific fields
+    if job.job_type == "video_generation":
+        response["current_subtopic"] = getattr(job, "current_subtopic", None)
+        response["total_subtopics"] = getattr(job, "total_subtopics", None)
+    
+    # Include result only when completed
+    if job.status == "completed":
+        response["result"] = job.result
+    
+    return response
+
+
+async def _run_blocking(func, *args, **kwargs):
+    return await asyncio.to_thread(func, *args, **kwargs)
 
 
 def _validate_background_video():
