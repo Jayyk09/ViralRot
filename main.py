@@ -547,13 +547,31 @@ async def create_video_job(
         # Handle optional images
         session_id = uuid4().hex
         image_dir = None
+        
+        # Debug logging for image uploads
+        print(f"\n{'='*50}")
+        print(f"🖼️  IMAGE UPLOAD DEBUG")
+        print(f"{'='*50}")
+        print(f"  images param: {images}")
+        print(f"  images length: {len(images) if images else 0}")
+        if images and len(images) > 0:
+            print(f"  first image filename: {images[0].filename if images[0].filename else 'EMPTY'}")
+            for i, img in enumerate(images):
+                print(f"  image[{i}]: filename={img.filename}, content_type={img.content_type}")
+        
         if images and len(images) > 0 and images[0].filename:
+            print(f"✅ Processing {len(images)} uploaded images...")
             _validate_image_files(images)
             image_dir = _save_uploaded_images(images, session_id)
+            print(f"💾 Saved images to: {image_dir}")
             _validate_image_references(transcript_data, image_dir)
+        else:
+            print(f"⚠️  No images to process (images={images}, len={len(images) if images else 0})")
+        print(f"{'='*50}\n")
         
         # Get dialogue info (new single dialogue format)
-        dialogue_data = transcript_data.get("dialogue_data")
+        # Support both "dialogue" (new) and "dialogue_data" (legacy) keys
+        dialogue_data = transcript_data.get("dialogue") or transcript_data.get("dialogue_data")
         if not dialogue_data:
             raise HTTPException(
                 status_code=400,
@@ -628,8 +646,8 @@ async def _process_video_job(
         # Small delay to allow WebSocket connection
         await asyncio.sleep(0.1)
         
-        # Extract dialogue data
-        dialogue_data = transcript_data["dialogue_data"]
+        # Extract dialogue data (support both keys)
+        dialogue_data = transcript_data.get("dialogue") or transcript_data.get("dialogue_data")
         
         # Generate single video with progress callback
         session_id_full = uuid4().hex
@@ -642,6 +660,21 @@ async def _process_video_job(
                 job_id=job_id,
                 current_stage=current_stage,
             )
+        
+        # Debug logging for video generation
+        print(f"\n{'='*50}")
+        print(f"🎬 VIDEO GENERATION DEBUG")
+        print(f"{'='*50}")
+        print(f"  job_id: {job_id}")
+        print(f"  image_dir: {image_dir}")
+        print(f"  karaoke_captions: {karaoke_captions}")
+        print(f"  dialogue_data keys: {dialogue_data.keys() if dialogue_data else 'None'}")
+        if dialogue_data and 'dialogue' in dialogue_data:
+            print(f"  dialogue lines: {len(dialogue_data['dialogue'])}")
+            # Check for image references in dialogue
+            img_count = sum(1 for line in dialogue_data['dialogue'] if line.get('image'))
+            print(f"  lines with images: {img_count}")
+        print(f"{'='*50}\n")
         
         video_result = await _run_blocking(
             generate_video_from_dialogue,
@@ -784,10 +817,25 @@ def _validate_image_references(transcript_data: dict, image_dir: Path):
     """
     Validate that all image filenames in transcript exist in image_dir.
     
+    Supports both:
+    - New single dialogue format: { dialogue: { title, dialogue[] } } or { dialogue_data: { ... } }
+    - Legacy multi-subtopic format: { subtopic_transcripts: [...] }
+    
     Raises HTTPException if any referenced image not found.
     """
     referenced_images = set()
     
+    # Support new single dialogue format (check both 'dialogue' and 'dialogue_data' keys)
+    dialogue_data = transcript_data.get("dialogue") or transcript_data.get("dialogue_data")
+    if dialogue_data and "dialogue" in dialogue_data:
+        print(f"🔍 Checking for image references in {len(dialogue_data['dialogue'])} dialogue lines...")
+        for i, line in enumerate(dialogue_data["dialogue"]):
+            if line.get("image"):
+                filename = line["image"]["filename"]
+                referenced_images.add(filename)
+                print(f"  📷 Found image reference at line {i}: {filename}")
+    
+    # Legacy: support old multi-subtopic format for backward compatibility
     for subtopic in transcript_data.get("subtopic_transcripts", []):
         for line in subtopic.get("dialogue", []):
             if line.get("image"):
@@ -795,18 +843,27 @@ def _validate_image_references(transcript_data: dict, image_dir: Path):
                 referenced_images.add(filename)
     
     if not referenced_images:
+        print("ℹ️  No image references found in transcript")
         return  # No images referenced, nothing to validate
+    
+    print(f"📋 Total referenced images: {referenced_images}")
     
     missing = []
     for filename in referenced_images:
-        if not (image_dir / filename).exists():
+        image_path = image_dir / filename
+        if not image_path.exists():
             missing.append(filename)
+            print(f"  ❌ Missing: {filename}")
+        else:
+            print(f"  ✅ Found: {filename} ({image_path})")
     
     if missing:
         raise HTTPException(
             status_code=400,
             detail=f"Referenced images not found in upload: {', '.join(missing)}"
         )
+    
+    print(f"✅ All {len(referenced_images)} referenced images validated successfully")
 
 
 def _extract_subtopic_number(video: dict) -> int:
