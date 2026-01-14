@@ -281,20 +281,21 @@ def create_video_with_audio_and_captions(
         fade_in_end = start + FADE_DURATION
         fade_out_start = max(end - FADE_DURATION, fade_in_end)
         
-        # Alpha expression for overlay - fade in then out
-        # Clamp values between 0 and 1
-        alpha_expr = (
-            f"if(lt(t,{start}),0,"
-            f"if(lt(t,{fade_in_end}),min(1,(t-{start})/{FADE_DURATION}),"
-            f"if(lt(t,{fade_out_start}),1,"
-            f"if(lt(t,{end}),max(0,({end}-t)/{FADE_DURATION}),"
-            f"0))))"
+        # Build enable expression for timing (simpler than alpha)
+        enable_expr = f"between(t,{start},{end})"
+        
+        # Apply fade filter to the educational image stream before overlaying
+        # This is more reliable than using alpha expressions
+        fade_stream = f"edu_{i}_faded"
+        filter_parts.append(
+            f"{edu_stream['stream']}fade=t=in:st={start}:d={FADE_DURATION}:alpha=1,"
+            f"fade=t=out:st={fade_out_start}:d={FADE_DURATION}:alpha=1[{fade_stream}]"
         )
         
-        # Use format=auto for overlay with alpha channel
+        # Overlay with enable expression for timing
         filter_parts.append(
-            f"{current_stream}{edu_stream['stream']}"
-            f"overlay=x={x_pos}:y={y_pos}:alpha='{alpha_expr}'[tmp_{overlay_count}]"
+            f"{current_stream}[{fade_stream}]"
+            f"overlay=x={x_pos}:y={y_pos}:enable='{enable_expr}'[tmp_{overlay_count}]"
         )
         current_stream = f"[tmp_{overlay_count}]"
         overlay_count += 1
