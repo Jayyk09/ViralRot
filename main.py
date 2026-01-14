@@ -125,6 +125,7 @@ class VideoGenerationRequest(BaseModel):
     dialogue: DialoguePayload
     images: Optional[Dict[str, str]] = None
     background_video: Optional[str] = "minecraft.mp4"
+    karaoke_captions: bool = True  # Default ON: word-by-word yellow highlighting
 
 
 # DEPRECATED: Kept for backward compatibility
@@ -492,6 +493,7 @@ async def create_video_job(
     user_id: int = Form(1),
     images: List[UploadFile] = File(default=[], description="Optional educational images"),
     updated_transcript: str | None = Form(None, description="Optional: Modified transcript JSON with image references"),
+    karaoke_captions: bool = Form(True, description="Use karaoke-style captions (word-by-word yellow highlighting). Default: ON"),
 ):
     """
     Generate videos from transcript (ASYNC with progress tracking).
@@ -503,10 +505,14 @@ async def create_video_job(
     2. (Optional) Edit transcript and add image references
     3. POST to this endpoint with transcript_id, optional images, and updated transcript
     4. Connect to WebSocket: /ws/progress/{job_id}
-    5. Receive progress updates for each subtopic
-    6. Get final result with collection_id and video URLs
+    5. Receive progress updates for video generation
+    6. Get final result with collection_id and video URL
     
-    Stages (per subtopic):
+    Caption Modes:
+    - karaoke_captions=true (default): Words highlight yellow one-by-one as spoken
+    - karaoke_captions=false: Traditional white text in black boxes
+    
+    Stages:
     - preparing_assets: Process uploaded images
     - audio_generation: Create TTS audio with MiniMax
     - video_assembly: FFmpeg overlay with captions
@@ -570,12 +576,14 @@ async def create_video_job(
             transcript_data=transcript_data,
             image_dir=str(image_dir) if image_dir else None,
             session_id=session_id,
+            karaoke_captions=karaoke_captions,
         )
         
         return {
             "job_id": job_id,
             "job_type": "video_generation",
             "dialogue_title": dialogue_title,
+            "karaoke_captions": karaoke_captions,
             "message": "Video generation started. Connect to WebSocket for progress.",
             "websocket_url": f"/ws/progress/{job_id}",
             "status_url": f"/jobs/{job_id}/progress",
@@ -594,8 +602,19 @@ async def _process_video_job(
     transcript_data: dict,
     image_dir: Optional[str],
     session_id: str,
+    karaoke_captions: bool = True,
 ):
-    """Background task for video generation with progress updates."""
+    """Background task for video generation with progress updates.
+    
+    Args:
+        job_id: Unique job identifier for progress tracking
+        user_id: User ID for database operations
+        transcript_data: Dict with dialogue_data containing title and dialogue
+        image_dir: Optional path to uploaded images directory
+        session_id: Unique session ID for temp file management
+        karaoke_captions: If True (default), use karaoke-style word-by-word highlighting.
+                         If False, use traditional box captions.
+    """
     try:
         _validate_background_video()
         
@@ -636,6 +655,7 @@ async def _process_video_job(
             None,  # storage_backend
             progress_callback,  # progress_callback
             job_id,  # job_id for progress
+            karaoke_captions,  # karaoke caption mode
         )
         
         # Get collection info

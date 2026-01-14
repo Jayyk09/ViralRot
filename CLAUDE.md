@@ -140,7 +140,7 @@ The API uses an async job-based architecture with real-time progress tracking vi
 
 ## Educational Images Feature
 
-Videos can include educational images overlaid during specific dialogue lines. See `IMAGES_GUIDE.md` for complete documentation.
+Videos can include educational images overlaid during specific dialogue lines.
 
 **Workflow:**
 1. `POST /jobs/generate-transcript` - Start transcript generation (async)
@@ -167,6 +167,37 @@ Videos can include educational images overlaid during specific dialogue lines. S
 - Characters: Bottom-left (both Peter and Stewie)
 - Educational images: Top area (right for medium, center for large)
 - Captions: Center of screen
+
+## Karaoke Caption Mode
+
+Videos use karaoke-style captions by default, with word-by-word yellow highlighting. See `KARAOKE_GUIDE.md` for complete documentation.
+
+**Caption Modes:**
+- **Karaoke (default)**: Words highlight yellow one-by-one as spoken
+- **Box**: Traditional white text in semi-transparent black boxes
+
+**API Usage:**
+```bash
+# Default (karaoke ON)
+curl -X POST http://localhost:8000/jobs/generate-video \
+  -F "transcript_id=abc123" \
+  -F "user_id=1"
+
+# Disable karaoke (use box captions)
+curl -X POST http://localhost:8000/jobs/generate-video \
+  -F "transcript_id=abc123" \
+  -F "user_id=1" \
+  -F "karaoke_captions=false"
+```
+
+**CLI Testing:**
+```bash
+# Test karaoke mode
+python test_image_overlay.py --config test_configs/my_config.json --karaoke
+
+# Test box captions
+python test_image_overlay.py --config test_configs/my_config.json
+```
 
 ## Testing
 
