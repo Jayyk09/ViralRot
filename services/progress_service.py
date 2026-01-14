@@ -42,14 +42,6 @@ def set_event_loop(loop: asyncio.AbstractEventLoop) -> None:
 
 # ============ Pydantic Models ============
 
-class SubtopicProgress(BaseModel):
-    """Progress for a single subtopic in video generation."""
-    index: int
-    title: str
-    stage: Literal["queued", "preparing_assets", "audio_generation", "video_assembly", "uploading", "completed", "failed"]
-    error: Optional[str] = None
-
-
 class TranscriptJobProgress(BaseModel):
     """Progress state for transcript generation job."""
     job_id: str
@@ -91,60 +83,55 @@ class VideoJobProgress(BaseModel):
     job_type: Literal["video_generation"] = "video_generation"
     status: JobStatus = "queued"
     current_stage: VideoStage = "preparing_assets"
-    current_subtopic: int = 0
-    total_subtopics: int = 1
-    subtopics: Dict[int, SubtopicProgress] = {}
+    dialogue_title: Optional[str] = None  # Single video title
     created_at: datetime
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
-    result: Optional[dict] = None  # Contains collection_id + video URLs
+    result: Optional[dict] = None  # Contains collection_id + video info
     
     @property
     def percentage(self) -> int:
         """Calculate overall progress percentage."""
         if self.status == "completed":
             return 100
-        if self.status == "failed" or self.total_subtopics == 0:
+        if self.status == "failed":
             return 0
         
-        # 4 stages per subtopic
-        stages_per_subtopic = 4
-        completed_subtopics = max(0, self.current_subtopic - 1)
-        total_stages = self.total_subtopics * stages_per_subtopic
-        
-        # Count completed stages
-        completed_stages = completed_subtopics * stages_per_subtopic
-        
-        # Add progress within current subtopic
+        # 4 stages total
         stage_order = ["preparing_assets", "audio_generation", "video_assembly", "uploading"]
         if self.current_stage in stage_order:
-            completed_stages += stage_order.index(self.current_stage)
-        
-        return min(99, int((completed_stages / total_stages) * 100))
+            stage_index = stage_order.index(self.current_stage)
+            return min(99, int((stage_index / len(stage_order)) * 100))
+        return 0
     
     @property
     def message(self) -> str:
         """Human-readable progress message."""
         if self.status == "completed":
-            return f"All {self.total_subtopics} videos generated successfully!"
+            return "Video generated successfully!"
         if self.status == "failed":
             return f"Failed: {self.error}"
-        if self.current_subtopic == 0:
-            return "Initializing video generation..."
         
         stage_messages = {
-            "preparing_assets": "Preparing assets",
-            "audio_generation": "Generating audio",
-            "video_assembly": "Assembling video",
-            "uploading": "Uploading to storage",
+            "preparing_assets": "Preparing assets...",
+            "audio_generation": "Generating audio...",
+            "video_assembly": "Assembling video...",
+            "uploading": "Uploading to storage...",
         }
         stage_msg = stage_messages.get(self.current_stage, self.current_stage)
         
-        # Get subtopic title if available
-        subtopic = self.subtopics.get(self.current_subtopic)
-        title = subtopic.title if subtopic else f"Subtopic {self.current_subtopic}"
-        
-        return f"{stage_msg} for subtopic {self.current_subtopic}/{self.total_subtopics}: {title}"
+        if self.dialogue_title:
+            return f"{stage_msg} ({self.dialogue_title})"
+        return stage_msg
+
+
+# DEPRECATED: Kept for backward compatibility
+class SubtopicProgress(BaseModel):
+    """DEPRECATED: Progress for a single subtopic in video generation."""
+    index: int
+    title: str
+    stage: Literal["queued", "preparing_assets", "audio_generation", "video_assembly", "uploading", "completed", "failed"]
+    error: Optional[str] = None
 
 
 class ProgressUpdate(BaseModel):
@@ -156,6 +143,8 @@ class ProgressUpdate(BaseModel):
     percentage: int
     message: str
     current_stage: Optional[str] = None
+    dialogue_title: Optional[str] = None  # For single dialogue video jobs
+    # Deprecated fields (kept for backward compatibility)
     current_subtopic: Optional[int] = None
     total_subtopics: Optional[int] = None
     subtopic_title: Optional[str] = None
@@ -210,21 +199,14 @@ class ProgressService:
         return job_id
     
     @staticmethod
-    def create_video_job(user_id: int, total_subtopics: int, subtopic_titles: Optional[List[str]] = None) -> str:
-        """Create a new video generation job."""
+    def create_video_job(user_id: int, dialogue_title: Optional[str] = None) -> str:
+        """Create a new video generation job for single dialogue."""
         job_id = uuid4().hex
-        
-        # Build subtopic progress dict
-        subtopics = {}
-        for i in range(1, total_subtopics + 1):
-            title = subtopic_titles[i - 1] if subtopic_titles and i <= len(subtopic_titles) else f"Subtopic {i}"
-            subtopics[i] = SubtopicProgress(index=i, title=title, stage="queued")
         
         job = VideoJobProgress(
             job_id=job_id,
             user_id=user_id,
-            total_subtopics=total_subtopics,
-            subtopics=subtopics,
+            dialogue_title=dialogue_title,
             created_at=datetime.now(),
         )
         
@@ -245,10 +227,12 @@ class ProgressService:
         job_id: str,
         status: Optional[JobStatus] = None,
         current_stage: Optional[str] = None,
-        current_subtopic: Optional[int] = None,
-        subtopic_title: Optional[str] = None,
         error: Optional[str] = None,
         result: Optional[dict] = None,
+        # Deprecated parameters for backward compatibility
+        current_subtopic: Optional[int] = None,
+        subtopic_title: Optional[str] = None,
+        title: Optional[str] = None,  # For setting dialogue_title
     ) -> None:
         """
         Update job progress and broadcast to WebSocket clients.
@@ -270,20 +254,10 @@ class ProgressService:
             if result:
                 job.result = result
             
-            # Update video-specific fields
+            # Update video-specific fields for single dialogue
             if isinstance(job, VideoJobProgress):
-                if current_subtopic is not None:
-                    job.current_subtopic = current_subtopic
-                
-                # Update subtopic progress
-                if current_subtopic and current_subtopic > 0 and current_subtopic in job.subtopics:
-                    if current_stage:
-                        job.subtopics[current_subtopic].stage = current_stage
-                    if subtopic_title:
-                        job.subtopics[current_subtopic].title = subtopic_title
-                    if error:
-                        job.subtopics[current_subtopic].error = error
-                        job.subtopics[current_subtopic].stage = "failed"
+                if title:
+                    job.dialogue_title = title
             
             # Mark completion time
             if status in ("completed", "failed"):
@@ -334,16 +308,10 @@ class ProgressService:
         else:
             msg_type = "progress"
         
-        # Get subtopic info for video jobs
-        subtopic_title = None
-        current_subtopic = None
-        total_subtopics = None
-        
+        # Get dialogue title for video jobs
+        dialogue_title = None
         if isinstance(job, VideoJobProgress):
-            current_subtopic = job.current_subtopic
-            total_subtopics = job.total_subtopics
-            if job.current_subtopic and job.current_subtopic in job.subtopics:
-                subtopic_title = job.subtopics[job.current_subtopic].title
+            dialogue_title = job.dialogue_title
         
         return ProgressUpdate(
             type=msg_type,
@@ -353,9 +321,7 @@ class ProgressService:
             percentage=job.percentage,
             message=job.message,
             current_stage=job.current_stage,
-            current_subtopic=current_subtopic,
-            total_subtopics=total_subtopics,
-            subtopic_title=subtopic_title,
+            dialogue_title=dialogue_title,  # Changed from subtopic fields
             result=job.result if job.status == "completed" else None,
             error=job.error if job.status == "failed" else None,
         )

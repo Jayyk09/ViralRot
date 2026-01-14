@@ -556,11 +556,10 @@ async def create_video_job(
         
         dialogue_title = dialogue_data.get("title", "Untitled Dialogue")
         
-        # Create job (using 1 subtopic for now, will update progress service in next phase)
+        # Create job
         job_id = ProgressService.create_video_job(
             user_id=user_id,
-            total_subtopics=1,  # Single video now
-            subtopic_titles=[dialogue_title],
+            dialogue_title=dialogue_title,
         )
         
         # Start async processing
