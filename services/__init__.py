@@ -15,7 +15,7 @@ from .collection_service import (
     find_last_collection,
     generate_collection_title,
 )
-from .progress_service import ProgressService
+from .progress_service import ProgressService, set_event_loop
 from . import account_service
 
 __all__ = [
@@ -31,6 +31,7 @@ __all__ = [
     "generate_collection_title",
     # Progress service
     "ProgressService",
+    "set_event_loop",
     # Account service module
     "account_service",
 ]

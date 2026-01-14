@@ -4,6 +4,7 @@ import random
 import re
 import shutil
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -14,7 +15,7 @@ from typing import Literal
 
 from services.video_service import VideoService, get_user_videos, get_collection_videos
 from services.collection_service import get_collection, get_user_collections, find_last_collection
-from services.progress_service import ProgressService
+from services.progress_service import ProgressService, set_event_loop
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
@@ -117,16 +118,35 @@ class SubtopicRequest(BaseModel):
     subtopic_transcripts: List[SubtopicPayload]
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifecycle handler for startup and shutdown tasks."""
+    # Startup: Store event loop reference for thread-safe progress updates
+    loop = asyncio.get_running_loop()
+    set_event_loop(loop)
+    print(f"✅ Event loop initialized for progress broadcasting")
+    
+    yield
+    
+    # Shutdown: Clean up expired jobs and transcripts
+    expired_jobs = ProgressService.cleanup_expired()
+    expired_transcripts = cleanup_expired_transcripts_memory()
+    print(f"Shutdown cleanup: {expired_jobs} jobs, {expired_transcripts} transcripts removed")
+
+
 app = FastAPI(
     title="Video Generation API",
     description="API for generating videos from slides",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS settings so React (localhost:3000) can talk to this API
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(

@@ -22,6 +22,23 @@ JobStatus = Literal["queued", "processing", "completed", "failed"]
 TranscriptStage = Literal["extracting_content", "generating_dialogue"]
 VideoStage = Literal["preparing_assets", "audio_generation", "video_assembly", "uploading"]
 
+# ============ Event Loop Storage ============
+# Store reference to main event loop for thread-safe operations
+_main_event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+def set_event_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """
+    Set the main event loop for thread-safe operations.
+    
+    This should be called once during application startup with the FastAPI event loop.
+    It enables progress updates to be broadcast from background threads.
+    
+    Args:
+        loop: The asyncio event loop to use for scheduling broadcasts
+    """
+    global _main_event_loop
+    _main_event_loop = loop
+
 
 # ============ Pydantic Models ============
 
@@ -276,7 +293,36 @@ class ProgressService:
             update = ProgressService._build_update_message(job)
         
         # Broadcast to WebSocket clients (outside lock to avoid deadlock)
-        asyncio.create_task(ProgressService._broadcast(job_id, update))
+        ProgressService._schedule_broadcast(job_id, update)
+    
+    @staticmethod
+    def _schedule_broadcast(job_id: str, update: ProgressUpdate) -> None:
+        """
+        Schedule a broadcast in a thread-safe manner.
+        
+        This method handles broadcasting from both async contexts (where we have
+        a running event loop) and sync/thread contexts (where we don't).
+        
+        Args:
+            job_id: Job identifier
+            update: Progress update to broadcast
+        """
+        try:
+            # Try to create task in current event loop (async context)
+            loop = asyncio.get_running_loop()
+            asyncio.create_task(ProgressService._broadcast(job_id, update))
+        except RuntimeError:
+            # No running loop - we're in a thread context
+            # Use the stored main event loop
+            if _main_event_loop:
+                asyncio.run_coroutine_threadsafe(
+                    ProgressService._broadcast(job_id, update),
+                    _main_event_loop
+                )
+            else:
+                # Event loop not set - log warning but don't crash
+                print(f"⚠️  Warning: No event loop available for progress broadcast (job {job_id})")
+                print(f"   Call set_event_loop() during application startup to enable broadcasts from threads")
     
     @staticmethod
     def _build_update_message(job: JobProgress) -> ProgressUpdate:
