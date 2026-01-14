@@ -2,7 +2,7 @@
 """
 CLI for video generation pipeline.
 
-Generate subtopic videos from a single source.
+Generate a single educational video from a source.
 
 Usage:
     python cli.py --source lecture.mp3 --source-type audio --user-id 1
@@ -23,8 +23,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
-from backend_pipeline.generate_subtopic_videos import generate_videos_from_subtopic_list
-from services.collection_service import create_collection, generate_collection_title
+from backend_pipeline.generate_video import generate_video_from_dialogue
+from services.collection_service import create_collection
 from services.video_service import VideoService
 
 
@@ -38,19 +38,19 @@ def generate_complete_collection(
     storage_backend: str | None = None,
 ) -> dict:
     """
-    Generate a video collection from source material.
+    Generate a single video from source material.
 
     Args:
         source: File path, text content, or YouTube URL
         source_type: One of 'audio', 'text', 'youtube', 'pptx'
         user_id: User ID for database entries
-        background_dir: Directory containing background videos
+        background_dir: Directory containing background videos (or single video file)
         output_dir: Base directory for output videos
         audio_dir: Base directory for generated audio
         storage_backend: Storage backend ('s3' or 'local'). Uses env var if not set.
 
     Returns:
-        Dictionary with collection info and video results
+        Dictionary with collection info and video result
     """
     session_id = uuid4().hex
 
@@ -70,35 +70,38 @@ def generate_complete_collection(
     print(f"Session: {session_id}")
     print(f"{'='*60}\n")
 
-    # Step 1: Extract subtopic transcripts
-    print("📝 Step 1: Extracting subtopic transcripts...")
-    subtopics = extract_transcripts(source, source_type)
+    # Step 1: Extract dialogue transcript
+    print("📝 Step 1: Extracting dialogue transcript...")
+    dialogue = extract_transcripts(source, source_type)
 
-    if not subtopics:
-        raise ValueError("No subtopics extracted from source material")
+    if not dialogue or not dialogue.dialogue:
+        raise ValueError("No dialogue extracted from source material")
 
-    print(f"   Found {len(subtopics)} subtopics")
+    print(f"   Title: '{dialogue.title}'")
+    print(f"   Exchanges: {len(dialogue.dialogue)}")
 
     # Step 2: Create collection
     print("\n📁 Step 2: Creating collection...")
-    subtopic_titles = [s.subtopic_title for s in subtopics]
-    collection_title = generate_collection_title(subtopic_titles)
-    collection_id = create_collection(user_id, collection_title)
-    print(f"   Collection: '{collection_title}' (ID: {collection_id})")
+    collection_id = create_collection(user_id, dialogue.title)
+    print(f"   Collection: '{dialogue.title}' (ID: {collection_id})")
 
-    # Step 3: Generate subtopic videos
-    print("\n🎬 Step 3: Generating subtopic videos...")
-    subtopic_video_dir = output_dir / f"collection_{session_id}" / "subtopics"
-    subtopic_audio_dir = audio_dir / f"collection_{session_id}" / "subtopics"
+    # Step 3: Generate video
+    print("\n🎬 Step 3: Generating video...")
+    video_output_dir = output_dir / f"collection_{session_id}"
+    video_audio_dir = audio_dir / f"collection_{session_id}"
 
-    subtopic_results = generate_videos_from_subtopic_list(
-        subtopics=[s.model_dump() for s in subtopics],
+    def progress_callback(stage: str):
+        print(f"   {stage}")
+
+    video_result = generate_video_from_dialogue(
+        dialogue_data=dialogue.model_dump(),
         background_video=background_dir,
-        output_dir=subtopic_video_dir,
-        audio_dir=subtopic_audio_dir,
+        output_dir=video_output_dir,
+        audio_dir=video_audio_dir,
         user_id=user_id,
         collection_id=collection_id,
         storage_backend=storage_backend,
+        progress_callback=lambda stage: progress_callback(stage),
     )
 
     print(f"\n{'='*60}")
@@ -107,10 +110,9 @@ def generate_complete_collection(
 
     return {
         "collection_id": collection_id,
-        "collection_title": collection_title,
-        "subtopic_count": len(subtopic_results),
-        "total_videos": len(subtopic_results),
-        "subtopic_results": subtopic_results,
+        "collection_title": dialogue.title,
+        "video_id": video_result["video_id"],
+        "video_url": video_result.get("video_url"),
         "session_id": session_id,
         "storage_backend": storage_name,
     }
@@ -244,11 +246,10 @@ def main():
     print("\n=== Summary ===")
     print(f"Collection ID: {result['collection_id']}")
     print(f"Collection Title: {result['collection_title']}")
-    print(f"Total Videos: {result['total_videos']}")
+    print(f"Video ID: {result['video_id']}")
     print(f"Storage Backend: {result['storage_backend']}")
-    print(f"\nSubtopic Videos:")
-    for item in result["subtopic_results"]:
-        print(f"  - {item['subtopic_title']}: video_id={item['video_id']}")
+    if result.get("video_url"):
+        print(f"Video URL: {result['video_url']}")
 
 
 if __name__ == "__main__":
