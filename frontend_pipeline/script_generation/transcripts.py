@@ -17,7 +17,8 @@ try:
     )
     from frontend_pipeline.script_generation.models import (
         TranscriptResponse,
-        SubtopicDialogue,
+        SingleDialogue,
+        SubtopicDialogue,  # Keep for backward compatibility
     )
     from frontend_pipeline.script_generation.youtube import get_youtube_transcript
 except ImportError:  # pragma: no cover - fallback when run as script
@@ -28,7 +29,8 @@ except ImportError:  # pragma: no cover - fallback when run as script
     )
     from script_generation.models import (  # type: ignore
         TranscriptResponse,
-        SubtopicDialogue,
+        SingleDialogue,
+        SubtopicDialogue,  # Keep for backward compatibility
     )
     from script_generation.youtube import get_youtube_transcript  # type: ignore
 
@@ -39,29 +41,41 @@ def _ensure_text(data):
     return str(data)
 
 
-def _extend_from_payload(payload: Any, subtopics: List[SubtopicDialogue]) -> bool:
+def _extract_dialogue_from_payload(payload: Any) -> SingleDialogue | None:
+    """Extract SingleDialogue from Gemini response payload."""
     try:
         model = TranscriptResponse.model_validate(payload)
+        return model.dialogue_data
     except ValidationError:
-        return False
-
-    subtopics.extend(model.subtopic_transcripts)
-    return True
+        return None
 
 
-def parse_transcript_json(json_input: str) -> List[SubtopicDialogue]:
+def _extend_from_payload_legacy(payload: Any, subtopics: List[SubtopicDialogue]) -> bool:
+    """DEPRECATED: Legacy function for backward compatibility with old multi-subtopic format."""
+    try:
+        # Try to parse as old format with subtopic_transcripts
+        if isinstance(payload, dict) and "subtopic_transcripts" in payload:
+            for subtopic_data in payload["subtopic_transcripts"]:
+                subtopic = SubtopicDialogue.model_validate(subtopic_data)
+                subtopics.append(subtopic)
+            return True
+    except ValidationError:
+        pass
+    return False
+
+
+def parse_transcript_json(json_input: str) -> SingleDialogue:
     """
     Parse pre-formatted transcript JSON directly without Gemini processing.
 
-    Accepts JSON in either format:
-    1. Full format: {"subtopic_transcripts": [...]}
-    2. Direct array: [{"subtopic_title": "...", "dialogue": [...]}]
+    Accepts JSON in the new format:
+    {"dialogue_data": {"title": "...", "dialogue": [...]}}
 
     Args:
         json_input: JSON string matching the TranscriptResponse schema
 
     Returns:
-        List of SubtopicDialogue objects
+        SingleDialogue object
 
     Raises:
         ValueError: If JSON is invalid or doesn't match schema
@@ -71,21 +85,16 @@ def parse_transcript_json(json_input: str) -> List[SubtopicDialogue]:
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON: {e}")
 
-    # Handle both formats
-    if isinstance(data, list):
-        # Direct array format
-        data = {"subtopic_transcripts": data}
-
     try:
         response = TranscriptResponse.model_validate(data)
-        return list(response.subtopic_transcripts)
+        return response.dialogue_data
     except ValidationError as e:
         raise ValueError(f"JSON doesn't match transcript schema: {e}")
 
 
-def extract_transcripts(file, file_type):
+def extract_transcripts(file, file_type) -> SingleDialogue:
     """
-    Extract subtopic transcripts from various input types.
+    Extract a single dialogue from various input types.
 
     Args:
         file: Input content (file path, text content, YouTube URL, or JSON string)
@@ -97,7 +106,7 @@ def extract_transcripts(file, file_type):
             - transcript: Pre-formatted JSON matching the schema (bypasses Gemini)
 
     Returns:
-        List of SubtopicDialogue objects
+        SingleDialogue object
     """
     # Handle pre-formatted transcript JSON directly (no Gemini)
     if file_type == "transcript":
@@ -184,7 +193,7 @@ def extract_transcripts(file, file_type):
         system_instruction=prompt
     )
 
-    subtopic_transcripts: List[SubtopicDialogue] = []
+    dialogue_result: SingleDialogue | None = None
     accumulated_text = ""
 
     for chunk in client.models.generate_content_stream(
@@ -195,13 +204,18 @@ def extract_transcripts(file, file_type):
         text = getattr(chunk, "text", None) or ""
         accumulated_text += text
 
+        # Try to parse accumulated text
         try:
             parsed = json.loads(accumulated_text)
-            if isinstance(parsed, dict) and _extend_from_payload(parsed, subtopic_transcripts):
-                break
+            if isinstance(parsed, dict):
+                dialogue = _extract_dialogue_from_payload(parsed)
+                if dialogue:
+                    dialogue_result = dialogue
+                    break
         except Exception:
             pass
 
+        # Try to extract from chunk response data
         resp_data = None
         if hasattr(chunk, "response") and getattr(chunk, "response"):
             resp = getattr(chunk, "response")
@@ -226,23 +240,28 @@ def extract_transcripts(file, file_type):
                             break
 
         if resp_data and isinstance(resp_data, dict):
-            if _extend_from_payload(resp_data, subtopic_transcripts):
+            dialogue = _extract_dialogue_from_payload(resp_data)
+            if dialogue:
+                dialogue_result = dialogue
                 break
 
-    if not subtopic_transcripts and accumulated_text:
+    # Final attempt to parse accumulated text
+    if not dialogue_result and accumulated_text:
         try:
             parsed = json.loads(accumulated_text)
             if isinstance(parsed, dict):
-                _extend_from_payload(parsed, subtopic_transcripts)
+                dialogue_result = _extract_dialogue_from_payload(parsed)
         except Exception:
             pass
 
-    return subtopic_transcripts
+    if not dialogue_result:
+        raise ValueError("Failed to extract dialogue from Gemini response")
+
+    return dialogue_result
 
 
 if __name__ == "__main__":
     file = "C:\\Users\\Chris\\Downloads\\The essence of calculus.mp3"
     file_type = "audio/mp3"
-    transcripts = extract_transcripts(file, file_type)
-    for subtopic in transcripts:
-        print(subtopic.model_dump())
+    dialogue = extract_transcripts(file, file_type)
+    print(dialogue.model_dump())

@@ -32,7 +32,23 @@ class DialogueLine(BaseModel):
     )
 
 
+class SingleDialogue(BaseModel):
+    """A single conversational dialogue between Peter and Stewie."""
+    title: str = Field(
+        ...,
+        description="A short title for this conversation.",
+    )
+    dialogue: List[DialogueLine]
+
+
+class TranscriptResponse(BaseModel):
+    """Response containing a single dialogue."""
+    dialogue_data: SingleDialogue
+
+
+# Deprecated: kept for backward compatibility with old code
 class SubtopicDialogue(BaseModel):
+    """DEPRECATED: Use SingleDialogue instead."""
     subtopic_title: str = Field(
         ...,
         description="A short title for the distinct subtopic.",
@@ -40,13 +56,10 @@ class SubtopicDialogue(BaseModel):
     dialogue: List[DialogueLine]
 
 
-class TranscriptResponse(BaseModel):
-    subtopic_transcripts: List[SubtopicDialogue]
-
-
 __all__ = [
     "ImageConfig",
     "DialogueLine",
-    "SubtopicDialogue",
+    "SingleDialogue",
     "TranscriptResponse",
+    "SubtopicDialogue",  # Deprecated, kept for backward compatibility
 ]

@@ -1,54 +1,46 @@
 """Prompt templates for generating Peter & Stewie dialogues."""
 
-AUDIO_PROMPT = """You are to generate short-form dialogues between Peter Griffin and Stewie Griffin in a fun, and engaging way. The dialouges should be similar to the way Peter and Stewie would talk to each other in the show.
+AUDIO_PROMPT = """You are to generate a short-form dialogue between Peter Griffin and Stewie Griffin in a fun and engaging way. The dialogue should be similar to the way Peter and Stewie would talk to each other in the show.
 
 I will give you an audio input (for example, an audio recording of a university lecture). Your job is to:
 
 Listen to or process the audio's content.
 
-Identify the distinct subtopics discussed in the audio.
+Identify the KEY CONCEPTS discussed in the audio.
 
-For EACH distinct subtopic, generate a separate short-form dialogue (~1 minute transcript, 120-150 words) summarizing that specific subtopic.
+Generate a SINGLE conversational dialogue (~1 minute, 120-150 words total) that summarizes the main concepts in an educational and humorous way.
 
-Output a SINGLE JSON object that contains all of these transcripts, structured exactly like this:
+Output a SINGLE JSON object structured exactly like this:
 {
-  "subtopic_transcripts": [
-    {
-      "subtopic_title": "A short title for the first distinct subtopic.",
-      "dialogue": [
-        {
-          "caption": "A single sentence under 20 words.",
-          "speaker": "PETER",
-          "emotion": "neutral"
-        },
-        {
-          "caption": "Another single sentence under 20 words.",
-          "speaker": "STEWIE",
-          "emotion": "confused"
-        }
-      ]
-    },
-    {
-      "subtopic_title": "A short title for the second distinct subtopic.",
-      "dialogue": [
-        {
-          "caption": "This dialogue is about the second subtopic.",
-          "speaker": "PETER",
-          "emotion": "excited"
-        },
-        {
-          "caption": "Fascinating! But what about...?",
-          "speaker": "STEWIE",
-          "emotion": "confused"
-        }
-      ]
-    }
-  ]
+  "dialogue_data": {
+    "title": "A short, descriptive title for this conversation.",
+    "dialogue": [
+      {
+        "caption": "A single sentence under 20 words.",
+        "speaker": "PETER",
+        "emotion": "neutral"
+      },
+      {
+        "caption": "Another single sentence under 20 words.",
+        "speaker": "STEWIE",
+        "emotion": "confused"
+      },
+      {
+        "caption": "That's a great question! Let me explain...",
+        "speaker": "PETER",
+        "emotion": "excited"
+      }
+    ]
+  }
 }
 
 RULES:
 
-You must generate one transcript object (with a "subtopic_title" and "dialogue" array) for each main, distinct subtopic you identify in the audio.
+Generate ONE conversation covering the main concepts from the audio.
+
+Target length: ~1 minute of spoken dialogue (approximately 120-150 words total).
+
+Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 6-10 exchanges).
 
 Each "caption" must be one sentence only, 20 words or fewer.
 
@@ -58,71 +50,61 @@ Each object in the "dialogue" array must include an "emotion" field. The value m
 
 IMPORTANT: Default to "neutral". Only use "angry", "excited", or "confused" if the emotion strongly and clearly fits the specific line and character's persona.
 
-The "subtopic_title" should be a brief, descriptive string.
+The "title" should be a brief, descriptive string for the overall conversation.
 
-The tone for EACH dialogue should resemble Peter teaching and Stewie asking curious questions.
+The tone should resemble Peter teaching and Stewie asking curious questions.
 
-EACH dialogue must be conversational and humorous, but still educational about its subtopic.
+The dialogue must be conversational and humorous, but still educational.
 
-In EACH "dialogue" array, Stewie must ask at least one question about that specific subtopic.
-
-EACH "dialogue" array should total roughly 1 minute of spoken dialogue (approx. 120-150 words).
+Stewie must ask at least one question during the conversation.
 
 Make NO reference to images or visual elements, aside from examples such as "imagine a chart showing..." or "picture this scenario...".
 
-NO extra text—only the single JSON object containing all generated transcripts.
+NO extra text—only the single JSON object.
 
 After I provide the audio input, respond ONLY with the JSON result."""
 
-TEXT_PROMPT = """You are to generate short-form dialogues between Peter Griffin and Stewie Griffin in a fun, and engaging way. The dialouges should be similar to the way Peter and Stewie would talk to each other in the show.
+TEXT_PROMPT = """You are to generate a short-form dialogue between Peter Griffin and Stewie Griffin in a fun and engaging way. The dialogue should be similar to the way Peter and Stewie would talk to each other in the show.
 
 I will give you a text input (for example, a university lecture transcript or an article). Your job is to:
 
 Read and process the text's content.
 
-Identify the distinct subtopics discussed in the text.
+Identify the KEY CONCEPTS discussed in the text.
 
-For EACH distinct subtopic, generate a separate short-form dialogue (~1 minute transcript, 120-150 words) summarizing that specific subtopic.
+Generate a SINGLE conversational dialogue (~1 minute, 120-150 words total) that summarizes the main concepts in an educational and humorous way.
 
-Output a SINGLE JSON object that contains all of these transcripts, structured exactly like this:
+Output a SINGLE JSON object structured exactly like this:
 {
-  "subtopic_transcripts": [
-    {
-      "subtopic_title": "A short title for the first distinct subtopic.",
-      "dialogue": [
-        {
-          "caption": "A single sentence under 20 words.",
-          "speaker": "PETER",
-          "emotion": "neutral"
-        },
-        {
-          "caption": "Another single sentence under 20 words.",
-          "speaker": "STEWIE",
-          "emotion": "confused"
-        }
-      ]
-    },
-    {
-      "subtopic_title": "A short title for the second distinct subtopic.",
-      "dialogue": [
-        {
-          "caption": "This dialogue is about the second subtopic.",
-          "speaker": "PETER",
-          "emotion": "angry"
-        },
-        {
-          "caption": "Fascinating! But what about...?",
-          "speaker": "STEWIE",
-          "emotion": "excited"
-        }
-      ]
-    }
-  ]
+  "dialogue_data": {
+    "title": "A short, descriptive title for this conversation.",
+    "dialogue": [
+      {
+        "caption": "A single sentence under 20 words.",
+        "speaker": "PETER",
+        "emotion": "neutral"
+      },
+      {
+        "caption": "Another single sentence under 20 words.",
+        "speaker": "STEWIE",
+        "emotion": "confused"
+      },
+      {
+        "caption": "That's a great question! Let me explain...",
+        "speaker": "PETER",
+        "emotion": "excited"
+      }
+    ]
+  }
 }
 
 RULES:
 
-You must generate one transcript object (with a "subtopic_title" and "dialogue" array) for each main, distinct subtopic you identify in the text.
+Generate ONE conversation covering the main concepts from the text.
+
+Target length: ~1 minute of spoken dialogue (approximately 120-150 words total).
+
+Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 6-10 exchanges).
 
 Each "caption" must be one sentence only, 20 words or fewer.
 
@@ -132,71 +114,61 @@ Each object in the "dialogue" array must include an "emotion" field. The value m
 
 IMPORTANT: Default to "neutral". Only use "angry", "excited", or "confused" if the emotion strongly and clearly fits the specific line and character's persona.
 
-The "subtopic_title" should be a brief, descriptive string.
+The "title" should be a brief, descriptive string for the overall conversation.
 
-The tone for EACH dialogue should resemble Peter teaching and Stewie asking curious questions.
+The tone should resemble Peter teaching and Stewie asking curious questions.
 
-EACH dialogue must be conversational and humorous, but still educational about its subtopic.
+The dialogue must be conversational and humorous, but still educational.
 
-In EACH "dialogue" array, Stewie must ask at least one question about that specific subtopic.
-
-EACH "dialogue" array should total roughly 1 minute of spoken dialogue (approx. 120-150 words).
+Stewie must ask at least one question during the conversation.
 
 Make NO reference to images or visual elements, aside from examples such as "imagine a chart showing..." or "picture this scenario...".
 
-NO extra text—only the single JSON object containing all generated transcripts.
+NO extra text—only the single JSON object.
 
 After I provide the text input, respond ONLY with the JSON result."""
 
-PPTX_PROMPT = """You are to generate short-form dialogues between Peter Griffin and Stewie Griffin in a fun, and engaging way. The dialouges should be similar to the way Peter and Stewie would talk to each other in the show.
+PPTX_PROMPT = """You are to generate a short-form dialogue between Peter Griffin and Stewie Griffin in a fun and engaging way. The dialogue should be similar to the way Peter and Stewie would talk to each other in the show.
 
 I will give you a PowerPoint file as input. Your job is to:
 
 Read and process the content of the PowerPoint slides.
 
-Identify the distinct subtopics discussed in the PowerPoint.
+Identify the KEY CONCEPTS discussed in the PowerPoint.
 
-For EACH distinct subtopic, generate a separate short-form educational dialogue (~1 minute transcript, 120-150 words) summarizing that specific subtopic.
+Generate a SINGLE conversational dialogue (~1 minute, 120-150 words total) that summarizes the main concepts in an educational and humorous way.
 
-Output a SINGLE JSON object that contains all of these transcripts, structured exactly like this:
+Output a SINGLE JSON object structured exactly like this:
 {
-  "subtopic_transcripts": [
-    {
-      "subtopic_title": "A short title for the first distinct subtopic.",
-      "dialogue": [
-        {
-          "caption": "A single sentence under 20 words.",
-          "speaker": "PETER",
-          "emotion": "neutral"
-        },
-        {
-          "caption": "Another single sentence under 20 words.",
-          "speaker": "STEWIE",
-          "emotion": "confused"
-        }
-      ]
-    },
-    {
-      "subtopic_title": "A short title for the second distinct subtopic.",
-      "dialogue": [
-        {
-          "caption": "This dialogue is about the second subtopic.",
-          "speaker": "PETER",
-          "emotion": "angry"
-        },
-        {
-          "caption": "Fascinating! But what about...?",
-          "speaker": "STEWIE",
-          "emotion": "excited"
-        }
-      ]
-    }
-  ]
+  "dialogue_data": {
+    "title": "A short, descriptive title for this conversation.",
+    "dialogue": [
+      {
+        "caption": "A single sentence under 20 words.",
+        "speaker": "PETER",
+        "emotion": "neutral"
+      },
+      {
+        "caption": "Another single sentence under 20 words.",
+        "speaker": "STEWIE",
+        "emotion": "confused"
+      },
+      {
+        "caption": "That's a great question! Let me explain...",
+        "speaker": "PETER",
+        "emotion": "excited"
+      }
+    ]
+  }
 }
 
 RULES:
 
-You must generate one transcript object (with a "subtopic_title" and "dialogue" array) for each main, distinct subtopic you identify in the PowerPoint.
+Generate ONE conversation covering the main concepts from the PowerPoint.
+
+Target length: ~1 minute of spoken dialogue (approximately 120-150 words total).
+
+Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 6-10 exchanges).
 
 Each "caption" must be one sentence only, 20 words or fewer.
 
@@ -206,18 +178,16 @@ Each object in the "dialogue" array must include an "emotion" field. The value m
 
 IMPORTANT: Default to "neutral". Only use "angry", "excited", or "confused" if the emotion strongly and clearly fits the specific line and character's persona.
 
-The "subtopic_title" should be a brief, descriptive string.
+The "title" should be a brief, descriptive string for the overall conversation.
 
-The tone for EACH dialogue should resemble Peter teaching and Stewie asking curious questions.
+The tone should resemble Peter teaching and Stewie asking curious questions.
 
-EACH dialogue must be conversational and humorous, but still educational about its subtopic.
+The dialogue must be conversational and humorous, but still educational.
 
-In EACH "dialogue" array, Stewie must ask at least one question about that specific subtopic.
-
-EACH "dialogue" array should total roughly 1 minute of spoken dialogue (approx. 120-150 words).
+Stewie must ask at least one question during the conversation.
 
 Make NO reference to images or visual elements, aside from examples such as "imagine a chart showing..." or "picture this scenario...".
 
-NO extra text—only the single JSON object containing all generated transcripts.
+NO extra text—only the single JSON object.
 
 After I provide the PowerPoint file, respond ONLY with the JSON result."""
