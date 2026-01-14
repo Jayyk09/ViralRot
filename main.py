@@ -19,8 +19,8 @@ from services.progress_service import ProgressService, set_event_loop
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
-from backend_pipeline.generate_subtopic_videos import (
-    generate_videos_from_subtopic_list,
+from backend_pipeline.generate_video import (
+    generate_video_from_dialogue,
 )
 import services.account_service as account_service
 
@@ -109,12 +109,33 @@ class DialogueLine(BaseModel):
     image: Optional[ImageConfig] = None
 
 
+class DialoguePayload(BaseModel):
+    """Single dialogue with title and dialogue lines."""
+    title: str
+    dialogue: List[DialogueLine]
+
+
+class TranscriptGenerationRequest(BaseModel):
+    """Request to generate a transcript from a source."""
+    pass  # No request body needed, uses form data
+
+
+class VideoGenerationRequest(BaseModel):
+    """Request to generate video from a dialogue."""
+    dialogue: DialoguePayload
+    images: Optional[Dict[str, str]] = None
+    background_video: Optional[str] = "minecraft.mp4"
+
+
+# DEPRECATED: Kept for backward compatibility
 class SubtopicPayload(BaseModel):
+    """DEPRECATED: Use DialoguePayload instead."""
     subtopic_title: str
     dialogue: List[DialogueLine]
 
 
 class SubtopicRequest(BaseModel):
+    """DEPRECATED: Use VideoGenerationRequest instead."""
     subtopic_transcripts: List[SubtopicPayload]
 
 
@@ -414,24 +435,24 @@ async def _process_transcript_job(
             current_stage="generating_dialogue",
         )
         
-        # Call the transcript extraction
-        subtopics = await _run_blocking(
+        # Call the transcript extraction - returns SingleDialogue now
+        dialogue = await _run_blocking(
             extract_transcripts,
             transcript_source,
             transcript_type,
         )
         
-        if not subtopics:
+        if not dialogue or not dialogue.dialogue:
             ProgressService.update_job(
                 job_id=job_id,
                 status="failed",
-                error="No subtopics generated from source content. The AI model returned empty results.",
+                error="No dialogue generated from source content. The AI model returned empty results.",
             )
             return
         
         # Build transcript data with metadata
         transcript_data = {
-            "subtopic_transcripts": [s.model_dump() for s in subtopics]
+            "dialogue_data": dialogue.model_dump()
         }
         _add_metadata_to_transcript(transcript_data)
         
@@ -445,8 +466,7 @@ async def _process_transcript_job(
             result={
                 "transcript_id": transcript_id,
                 "expires_in_hours": 24,
-                "subtopic_count": len(subtopics),
-                "subtopic_transcripts": transcript_data["subtopic_transcripts"],
+                "dialogue": transcript_data["dialogue_data"],
             },
         )
     
@@ -520,27 +540,27 @@ async def create_video_job(
         
         # Handle optional images
         session_id = uuid4().hex
+        image_dir = None
         if images and len(images) > 0 and images[0].filename:
             _validate_image_files(images)
             image_dir = _save_uploaded_images(images, session_id)
             _validate_image_references(transcript_data, image_dir)
         
-        # Get subtopic info
-        subtopics = transcript_data.get("subtopic_transcripts", [])
-        if not subtopics:
+        # Get dialogue info (new single dialogue format)
+        dialogue_data = transcript_data.get("dialogue_data")
+        if not dialogue_data:
             raise HTTPException(
                 status_code=400,
-                detail="Transcript contains no subtopics"
+                detail="Transcript contains no dialogue data"
             )
         
-        total_subtopics = len(subtopics)
-        subtopic_titles = [s.get("subtopic_title", f"Subtopic {i+1}") for i, s in enumerate(subtopics)]
+        dialogue_title = dialogue_data.get("title", "Untitled Dialogue")
         
-        # Create job with subtopic info
+        # Create job (using 1 subtopic for now, will update progress service in next phase)
         job_id = ProgressService.create_video_job(
             user_id=user_id,
-            total_subtopics=total_subtopics,
-            subtopic_titles=subtopic_titles,
+            total_subtopics=1,  # Single video now
+            subtopic_titles=[dialogue_title],
         )
         
         # Start async processing
@@ -556,7 +576,7 @@ async def create_video_job(
         return {
             "job_id": job_id,
             "job_type": "video_generation",
-            "total_subtopics": total_subtopics,
+            "dialogue_title": dialogue_title,
             "message": "Video generation started. Connect to WebSocket for progress.",
             "websocket_url": f"/ws/progress/{job_id}",
             "status_url": f"/jobs/{job_id}/progress",
@@ -585,20 +605,29 @@ async def _process_video_job(
             job_id=job_id,
             status="processing",
             current_stage="preparing_assets",
-            current_subtopic=1,
         )
         
         # Small delay to allow WebSocket connection
         await asyncio.sleep(0.1)
         
-        # Generate videos with progress callback
+        # Extract dialogue data
+        dialogue_data = transcript_data["dialogue_data"]
+        
+        # Generate single video with progress callback
         session_id_full = uuid4().hex
         video_output_dir = OUTPUT_DIR / f"job_{session_id_full}"
         audio_output_dir = GENERATED_AUDIO_DIR / f"job_{session_id_full}"
         
-        video_results = await _run_blocking(
-            generate_videos_from_subtopic_list,
-            transcript_data["subtopic_transcripts"],
+        # Progress callback wrapper for single video
+        def progress_callback(job_id, current_stage, title):
+            ProgressService.update_job(
+                job_id=job_id,
+                current_stage=current_stage,
+            )
+        
+        video_result = await _run_blocking(
+            generate_video_from_dialogue,
+            dialogue_data,
             str(BACKGROUND_VIDEOS_DIR),
             str(video_output_dir),
             str(audio_output_dir),
@@ -606,7 +635,7 @@ async def _process_video_job(
             None,  # collection_id (auto-create)
             image_dir,
             None,  # storage_backend
-            ProgressService.update_job,  # progress_callback
+            progress_callback,  # progress_callback
             job_id,  # job_id for progress
         )
         
@@ -620,8 +649,10 @@ async def _process_video_job(
             status="completed",
             result={
                 "collection_id": collection_id,
-                "video_count": len(video_results),
-                "results": video_results,
+                "video_id": video_result["video_id"],
+                "title": video_result["title"],
+                "access_url": video_result["access_url"],
+                "storage_key": video_result["storage_key"],
             },
         )
     
