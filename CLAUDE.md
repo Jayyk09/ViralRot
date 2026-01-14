@@ -55,15 +55,15 @@ Note: YouTube transcript extraction uses `youtube-transcript-api` (no API key re
 The project separates fast operations (frontend) from slow, I/O-intensive operations (backend):
 
 **Frontend Pipeline** (`frontend_pipeline/`):
-- `script_generation/transcripts.py` - Extracts subtopic transcripts from sources
+- `script_generation/transcripts.py` - Extracts single dialogue from sources
 - `script_generation/prompts.py` - Gemini prompt templates for content extraction
-- `script_generation/models.py` - Pydantic models for script structure
+- `script_generation/models.py` - Pydantic models (SingleDialogue, TranscriptResponse)
 - `script_generation/youtube.py` - YouTube transcript extraction helper
 
 **Backend Pipeline** (`backend_pipeline/`):
-- `audio_generation/minimax_tts.py` - TTS for subtopic videos using MiniMax API
-- `video_assembly/ffMpeg.py` - Video assembly for subtopics
-- `generate_subtopic_videos.py` - Orchestrates subtopic video creation
+- `audio_generation/minimax_tts.py` - TTS for videos using MiniMax API
+- `video_assembly/ffMpeg.py` - Video assembly with FFmpeg
+- `generate_video.py` - Orchestrates single video creation (replaces generate_subtopic_videos.py)
 
 ### Entry Points
 
@@ -75,32 +75,63 @@ The project separates fast operations (frontend) from slow, I/O-intensive operat
 ```
 Input (YouTube/Audio/PPTX/Text)
     ↓
-extract_transcripts() → List[SubtopicPayload]
+extract_transcripts() → SingleDialogue (~1 minute conversation)
     ↓
-generate_videos_from_subtopic_list() → Videos uploaded to S3
+generate_video_from_dialogue() → Single video uploaded to S3
     ↓
-All saved to collection in PostgreSQL
+Saved to collection in PostgreSQL (one video per transcript)
 ```
 
-### Database Layer (`save_to_db/`)
+### Database Layer (`services/`)
 
-- `save_video.py` - Video CRUD and S3 upload
+- `video_service.py` - Video CRUD and S3 upload
 - `collection_service.py` - Collection management
 - `account_service.py` - User accounts
+- `progress_service.py` - Job progress tracking with WebSocket support
 
 ### Key Models
 
-Script format uses `{t, c, s}` structure:
-- `t`: Full line for speaker (TTS input)
-- `c`: Short caption for screen
-- `s`: Speaker ID (Peter/Stewie)
+**New Single Dialogue Format:**
+```json
+{
+  "dialogue_data": {
+    "title": "Conversation Title",
+    "dialogue": [
+      {
+        "caption": "Short sentence under 20 words",
+        "speaker": "PETER",
+        "emotion": "neutral",
+        "image": {  // optional
+          "filename": "diagram.png",
+          "size": "medium",
+          "start_time": 0.5,
+          "duration": 3.0
+        }
+      }
+    ]
+  }
+}
+```
+
+**Legacy Format** (deprecated, kept for backward compatibility):
+- `SubtopicDialogue` - Old multi-video format
 
 ## API Endpoints
 
-- `POST /generate-video` - Generate subtopic videos from source
-- `POST /generate-transcript` - Generate transcript only (for image workflow)
-- `GET /transcripts/{id}` - Retrieve saved transcript
-- `POST /generate-video-with-images` - Generate video with educational images
+### Job-Based Video Generation (Async with WebSocket Progress)
+
+The API uses an async job-based architecture with real-time progress tracking via WebSocket:
+
+**Transcript Generation:**
+- `POST /jobs/generate-transcript` - Start transcript generation job (returns `job_id`)
+- `WS /ws/progress/{job_id}` - WebSocket for real-time progress updates
+- `GET /jobs/{job_id}/progress` - HTTP fallback for polling progress
+
+**Video Generation:**
+- `POST /jobs/generate-video` - Start video generation from transcript (returns `job_id`)
+- Uses same WebSocket/HTTP progress endpoints
+
+**Data Endpoints:**
 - `GET /videos` - User videos grouped by collection
 - `GET /collections` - List user collections
 - `GET /collections/{id}` - Collection details with videos
@@ -112,9 +143,11 @@ Script format uses `{t, c, s}` structure:
 Videos can include educational images overlaid during specific dialogue lines. See `IMAGES_GUIDE.md` for complete documentation.
 
 **Workflow:**
-1. `POST /generate-transcript` - Generate and store transcript (24h TTL)
-2. Add `image` references to dialogue lines in the JSON
-3. `POST /generate-video-with-images` - Upload images and generate video
+1. `POST /jobs/generate-transcript` - Start transcript generation (async)
+2. Connect to WebSocket `/ws/progress/{job_id}` for progress
+3. Get `transcript_id` from completed result
+4. Add `image` references to dialogue lines in the JSON
+5. `POST /jobs/generate-video` with `transcript_id` and images
 
 **Image Configuration:**
 ```json
