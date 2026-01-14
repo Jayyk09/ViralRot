@@ -161,6 +161,7 @@ def generate_video_from_dialogue(
     storage_backend: Optional[str] = None,
     progress_callback: Optional[Callable] = None,
     job_id: Optional[str] = None,
+    karaoke_captions: bool = False,
 ) -> Dict[str, Any]:
     """
     Generate a single video from a dialogue transcript.
@@ -177,6 +178,7 @@ def generate_video_from_dialogue(
         progress_callback: Optional callback function for progress updates.
                           Called with (job_id, current_stage, title)
         job_id: Job ID for progress tracking (required if progress_callback is provided)
+        karaoke_captions: If True, use karaoke-style word-by-word highlighting instead of box captions
 
     Returns:
         Dictionary with video info including video_id, storage_key, collection_id
@@ -272,13 +274,15 @@ def generate_video_from_dialogue(
 
     # Step 3: Create video
     video_output = output_dir / f"{slug}.mp4"
-    print("🎥 Creating video…")
+    caption_mode = "karaoke" if karaoke_captions else "box"
+    print(f"🎥 Creating video… (caption mode: {caption_mode})")
     video_path = create_video_with_audio_and_captions(
         background_video=str(current_bg_video),
         audio_file=audio_result["audio_file"],
         caption_timings=audio_result["timings"],
         output_file=str(video_output),
         educational_images=educational_images,
+        caption_mode=caption_mode,
     )
 
     # === PROGRESS: Uploading ===

@@ -268,6 +268,11 @@ def main():
         action="store_true",
         help="Show detailed FFmpeg output"
     )
+    parser.add_argument(
+        "--karaoke",
+        action="store_true",
+        help="Use karaoke-style captions (word-by-word yellow highlight) instead of box captions"
+    )
     
     args = parser.parse_args()
     
@@ -320,9 +325,11 @@ def main():
         )
     
     # Create video
+    caption_mode = "karaoke" if args.karaoke else "box"
     print(f"\n🎬 Creating video with image overlays...")
     print(f"   Background: {config['background_video']}")
     print(f"   Output: {output_file}")
+    print(f"   Caption mode: {caption_mode}")
     
     try:
         result_path = create_video_with_audio_and_captions(
@@ -331,6 +338,7 @@ def main():
             caption_timings=caption_timings,
             output_file=str(output_file),
             educational_images=educational_images,
+            caption_mode=caption_mode,
         )
         
         print(f"\n✅ Video created successfully!")

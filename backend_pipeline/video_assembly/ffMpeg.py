@@ -2,6 +2,8 @@ import subprocess
 import os
 import textwrap
 
+from backend_pipeline.video_assembly.ass_generator import generate_ass_subtitle_file
+
 def wrap_caption_text(text, max_chars=32):
     """Wrap caption text to a maximum characters per line (word-aware)."""
     wrapped_lines = textwrap.wrap(text, width=max_chars)
@@ -38,6 +40,7 @@ def create_video_with_audio_and_captions(
     peter_image=None,  # Deprecated, kept for backward compatibility
     stewie_image=None,  # Deprecated, kept for backward compatibility
     educational_images=None,  # List of educational image configs
+    caption_mode="box",  # "box" (default) or "karaoke" (word-by-word highlight)
 ):
     """
     Create a video with looping background, audio, caption overlays, and character images.
@@ -55,6 +58,7 @@ def create_video_with_audio_and_captions(
             - size: "medium" (432px) or "large" (800px)
             - start: Start time in seconds
             - end: End time in seconds
+        caption_mode: Caption style - "box" for background box, "karaoke" for word highlight
     
     Returns:
         Path to output video
@@ -127,46 +131,60 @@ def create_video_with_audio_and_captions(
         ]
         character_enables[key] = create_enable_expr(matching_timings)
     
-    # Build ffmpeg filter for captions
+    # Build ffmpeg filter for captions (box mode only - karaoke uses ASS)
     caption_filters = []
-    for timing in caption_timings:
-        # Wrap and escape caption text
-        wrapped_text = wrap_caption_text(timing["caption"])
-        
-        # The \n from textwrap should be passed to ffmpeg as a literal newline
-        caption_text = (
-            wrapped_text
-            .replace("\\", "\\\\")
-            .replace("'", "'\\\\\\''")
-            .replace(":", "\\:")
-        )
-        speaker = timing["speaker"]
-        
-        # Style for captions
-        if speaker == "PETER":
-            color = "white"
-            bg_color = "0x00000080"  
-        else:
-            color = "yellow"
-            bg_color = "0x0000FF80"  
-        
-        # Create drawtext filter for this caption with manual wrapping
-        caption_filter = (
-            f"drawtext=text='{caption_text}':"
-            f"fontfile=/System/Library/Fonts/Supplemental/Arial Bold.ttf:"
-            f"fontsize=54:"
-            f"fontcolor={color}:"
-            f"box=1:boxcolor={bg_color}:boxborderw=10:"
-            f"x=(w-tw)/2:" 
-            f"y=(h-th)/2:" 
-            f"text_align=C:"
-            f"enable='between(t,{timing['start']},{timing['end']})':"
-            f"line_spacing=18"
-        )
-        caption_filters.append(caption_filter)
+    ass_file_path = None  # Track ASS file for cleanup
     
-    # Combine all caption filters
-    all_captions = ",".join(caption_filters) if caption_filters else ""
+    if caption_mode == "karaoke":
+        # Generate ASS subtitle file for karaoke-style captions
+        ass_file_path = generate_ass_subtitle_file(
+            caption_timings=caption_timings,
+            output_path=os.path.join(os.path.dirname(output_file), "captions.ass"),
+            video_size=video_size,
+            font_size=48,
+        )
+        print(f"🎤 Karaoke mode: Generated ASS file at {ass_file_path}")
+        all_captions = ""  # No drawtext filters needed
+    else:
+        # Box mode: Create drawtext filters for each caption
+        for timing in caption_timings:
+            # Wrap and escape caption text
+            wrapped_text = wrap_caption_text(timing["caption"])
+            
+            # The \n from textwrap should be passed to ffmpeg as a literal newline
+            caption_text = (
+                wrapped_text
+                .replace("\\", "\\\\")
+                .replace("'", "'\\\\\\''")
+                .replace(":", "\\:")
+            )
+            speaker = timing["speaker"]
+            
+            # Style for captions
+            if speaker == "PETER":
+                color = "white"
+                bg_color = "0x00000080"  
+            else:
+                color = "yellow"
+                bg_color = "0x0000FF80"  
+            
+            # Create drawtext filter for this caption with manual wrapping
+            caption_filter = (
+                f"drawtext=text='{caption_text}':"
+                f"fontfile=/System/Library/Fonts/Supplemental/Arial Bold.ttf:"
+                f"fontsize=54:"
+                f"fontcolor={color}:"
+                f"box=1:boxcolor={bg_color}:boxborderw=10:"
+                f"x=(w-tw)/2:" 
+                f"y=(h-th)/2:" 
+                f"text_align=C:"
+                f"enable='between(t,{timing['start']},{timing['end']})':"
+                f"line_spacing=18"
+            )
+            caption_filters.append(caption_filter)
+        
+        # Combine all caption filters
+        all_captions = ",".join(caption_filters) if caption_filters else ""
     
     # Build filter_complex chain
     # Start with background video scaling
@@ -303,8 +321,14 @@ def create_video_with_audio_and_captions(
     if edu_images:
         print(f"📷 Added {len(edu_scaled_streams)} educational image overlays")
     
-    # Add captions on top
-    if all_captions:
+    # Add captions on top (either drawtext or ASS)
+    if caption_mode == "karaoke" and ass_file_path:
+        # Use ASS subtitle filter for karaoke-style captions
+        # Escape the path for FFmpeg filter syntax
+        escaped_ass_path = ass_file_path.replace("\\", "/").replace(":", "\\:")
+        filter_parts.append(f"{current_stream}ass='{escaped_ass_path}'[v]")
+    elif all_captions:
+        # Use drawtext filters for box-style captions
         filter_parts.append(f"{current_stream}{all_captions}[v]")
     else:
         filter_parts.append(f"{current_stream}split[v]") # Use split to ensure a named output stream even if no captions
@@ -358,6 +382,13 @@ def create_video_with_audio_and_captions(
     
     # Run ffmpeg
     result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    # Cleanup ASS file after video creation (keep it if there was an error for debugging)
+    if ass_file_path and result.returncode == 0:
+        try:
+            os.remove(ass_file_path)
+        except OSError:
+            pass  # Ignore cleanup errors
     
     if result.returncode == 0:
         print(f"✅ Video created successfully: {output_file}")
