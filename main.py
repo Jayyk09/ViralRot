@@ -195,6 +195,86 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/images/positions")
+async def get_image_positions():
+    """
+    Get available image sizes and their valid positions.
+    
+    Useful for frontend validation and UI hints when adding educational images.
+    
+    Image Limits:
+    - 1 large image OR 2 medium images (mutually exclusive for top area)
+    - Up to 3 small images can be added alongside large/medium
+    
+    Returns:
+        Dictionary mapping sizes to available positions with descriptions and coordinates
+    """
+    return {
+        "small": {
+            "size_px": 300,
+            "description": "Icon-size images, flexible positioning",
+            "max_count": 3,
+            "positions": {
+                "top-left": {
+                    "description": "Top-left corner, 50px margin",
+                    "coordinates": {"x": "50", "y": "100"}
+                },
+                "top-right": {
+                    "description": "Top-right corner, 50px margin (default)",
+                    "coordinates": {"x": "W-w-50", "y": "100"}
+                },
+                "bottom-right": {
+                    "description": "Bottom-right, next to characters",
+                    "coordinates": {"x": "W-w-50", "y": "H-h-50"}
+                }
+            },
+            "default_position": "top-right"
+        },
+        "medium": {
+            "size_px": 600,
+            "description": "Mid-size diagrams, top corners",
+            "max_count": 2,
+            "positions": {
+                "top-left": {
+                    "description": "Top-left corner, 50px margin",
+                    "coordinates": {"x": "50", "y": "100"}
+                },
+                "top-right": {
+                    "description": "Top-right corner, 50px margin (default)",
+                    "coordinates": {"x": "W-w-50", "y": "100"}
+                }
+            },
+            "default_position": "top-right"
+        },
+        "large": {
+            "size_px": 800,
+            "description": "Full-width diagrams, top-center",
+            "max_count": 1,
+            "positions": {
+                "top-center": {
+                    "description": "Top-center, horizontally centered",
+                    "coordinates": {"x": "(W-w)/2", "y": "100"}
+                }
+            },
+            "default_position": "top-center"
+        },
+        "limits": {
+            "description": "1 large OR 2 medium images, AND up to 3 small images",
+            "rules": [
+                "Large and medium images share the top area - use one OR the other",
+                "Small images can be combined with any large/medium configuration",
+                "Maximum 3 small images at any time",
+                "Images at same position will overlap - use different positions"
+            ]
+        },
+        "video_dimensions": {
+            "width": 1080,
+            "height": 1920,
+            "aspect_ratio": "9:16 (portrait)"
+        }
+    }
+
+
 # ============ WebSocket Progress Endpoint ============
 
 def get_current_user_id() -> int:
