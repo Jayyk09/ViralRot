@@ -424,11 +424,14 @@ def create_video_with_audio_and_captions(
         print(f"📷 EDUCATIONAL IMAGES DEBUG")
         print(f"{'='*60}")
         print(f"Total educational images: {len(edu_scaled_streams)}")
+        print(f"Limits: 1 large OR 2 medium, AND up to 3 small")
         for i, edu_stream in enumerate(edu_scaled_streams):
             size_name = edu_stream['size']
+            position = edu_stream.get('position', DEFAULT_POSITIONS.get(size_name, 'top-right'))
             width = IMAGE_SIZES.get(size_name, IMAGE_SIZES["medium"])
-            pos = "top-right" if size_name == "medium" else "top-center"
-            print(f"  [{i}] {size_name} ({width}px) - {pos}")
+            x_pos, y_pos = calculate_image_position(size_name, position)
+            print(f"  [{i}] {size_name} ({width}px) @ {position}")
+            print(f"      Coordinates: x={x_pos}, y={y_pos}")
             print(f"      Path: {edu_stream['path']}")
             print(f"      Time: {edu_stream['start']:.2f}s - {edu_stream['end']:.2f}s")
         print(f"{'='*60}\n")
