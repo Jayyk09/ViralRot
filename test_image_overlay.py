@@ -202,11 +202,14 @@ def build_educational_images_list(
         educational_images.append({
             "path": str(image_path),
             "size": image_config.get("size", "medium"),
+            "position": image_config.get("position"),  # Pass position to ffMpeg
             "start": absolute_start,
             "end": absolute_end,
         })
         
-        print(f"📷 Image '{filename}' scheduled: {absolute_start:.2f}s - {absolute_end:.2f}s ({image_config.get('size', 'medium')})")
+        size = image_config.get("size", "medium")
+        position = image_config.get("position", "default")
+        print(f"📷 Image '{filename}' scheduled: {absolute_start:.2f}s - {absolute_end:.2f}s ({size} @ {position})")
     
     return educational_images
 
