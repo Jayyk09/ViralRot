@@ -101,12 +101,22 @@ Saved to collection in PostgreSQL (one video per transcript)
         "caption": "Short sentence under 20 words",
         "speaker": "PETER",
         "emotion": "neutral",
-        "image": {  // optional
+        "image": {  // Single image (optional)
           "filename": "diagram.png",
-          "size": "medium",
-          "start_time": 0.5,
-          "duration": 3.0
-        }
+          "size": "medium"
+        },
+        "images": [  // Multiple simultaneous images (optional, use instead of "image")
+          {
+            "filename": "left.png",
+            "size": "medium",
+            "position": "top-left"
+          },
+          {
+            "filename": "right.png",
+            "size": "medium",
+            "position": "top-right"
+          }
+        ]
       }
     ]
   }
