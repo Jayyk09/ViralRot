@@ -4,24 +4,26 @@
   "output_file": "tmp/test_videos/test_medium_side_by_side.mp4",
   "dialogue": [
     {
-      "caption": "Look at these two diagrams side by side!",
+      "caption": "Look at these two diagrams appearing side by side at the same time!",
       "speaker": "PETER",
       "emotion": "excited",
-      "image": {
-        "filename": "diagram_left.png",
-        "size": "medium",
-        "position": "top-left"
-      }
+      "images": [
+        {
+          "filename": "diagram_left.png",
+          "size": "medium",
+          "position": "top-left"
+        },
+        {
+          "filename": "diagram_right.png",
+          "size": "medium",
+          "position": "top-right"
+        }
+      ]
     },
     {
-      "caption": "They are both 540 pixels wide, fitting perfectly on screen!",
+      "caption": "Both diagrams are 540 pixels wide, fitting perfectly on screen!",
       "speaker": "STEWIE",
-      "emotion": "neutral",
-      "image": {
-        "filename": "diagram_right.png",
-        "size": "medium",
-        "position": "top-right"
-      }
+      "emotion": "neutral"
     },
     {
       "caption": "This is perfect for comparing two concepts at the same time.",

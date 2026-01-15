@@ -153,6 +153,10 @@ def build_educational_images_list(
     """
     Build educational images list with absolute timing from dialogue config.
     
+    Supports both single image and multiple images per dialogue line:
+    - "image": {...} - Single image (backward compatible)
+    - "images": [{...}, {...}] - Multiple images displayed simultaneously
+    
     Args:
         dialogue: Original dialogue config with image references
         caption_timings: Calculated timing data for each line
@@ -164,52 +168,63 @@ def build_educational_images_list(
     educational_images = []
     
     for i, line in enumerate(dialogue):
-        image_config = line.get("image")
-        if not image_config:
+        # Support both "image" (single) and "images" (array) formats
+        image_configs = []
+        
+        # Check for "images" array first (new format for simultaneous display)
+        if "images" in line and isinstance(line["images"], list):
+            image_configs = line["images"]
+        # Fall back to single "image" (backward compatible)
+        elif "image" in line and line["image"]:
+            image_configs = [line["image"]]
+        
+        if not image_configs:
             continue
         
         # Get timing for this line
         if i >= len(caption_timings):
-            print(f"⚠️  Warning: No timing for dialogue line {i}, skipping image")
+            print(f"⚠️  Warning: No timing for dialogue line {i}, skipping images")
             continue
         
         timing = caption_timings[i]
         line_start = timing["start"]
         line_end = timing["end"]
         
-        # Get image path
-        filename = image_config.get("filename")
-        if not filename or filename not in image_paths:
-            print(f"⚠️  Warning: Image '{filename}' not found in image paths")
-            continue
-        
-        image_path = Path(image_paths[filename])
-        if not image_path.exists():
-            print(f"⚠️  Warning: Image file not found: {image_path}")
-            continue
-        
-        # Calculate absolute timing
-        custom_start = image_config.get("start_time", 0) or 0
-        custom_duration = image_config.get("duration")
-        
-        absolute_start = line_start + custom_start
-        
-        if custom_duration:
-            absolute_end = min(absolute_start + custom_duration, line_end)
-        else:
-            absolute_end = line_end
-        
-        educational_images.append({
-            "path": str(image_path),
-            "size": image_config.get("size", "medium"),
-            "position": image_config.get("position"),  # Pass position to ffMpeg
-            "start": absolute_start,
-            "end": absolute_end,
-        })
-        
-        size = image_config.get("size", "medium")
-        position = image_config.get("position", "default")
-        print(f"📷 Image '{filename}' scheduled: {absolute_start:.2f}s - {absolute_end:.2f}s ({size} @ {position})")
+        # Process each image in the config (supports multiple simultaneous images)
+        for image_config in image_configs:
+            # Get image path
+            filename = image_config.get("filename")
+            if not filename or filename not in image_paths:
+                print(f"⚠️  Warning: Image '{filename}' not found in image paths")
+                continue
+            
+            image_path = Path(image_paths[filename])
+            if not image_path.exists():
+                print(f"⚠️  Warning: Image file not found: {image_path}")
+                continue
+            
+            # Calculate absolute timing
+            custom_start = image_config.get("start_time", 0) or 0
+            custom_duration = image_config.get("duration")
+            
+            absolute_start = line_start + custom_start
+            
+            if custom_duration:
+                absolute_end = min(absolute_start + custom_duration, line_end)
+            else:
+                absolute_end = line_end
+            
+            educational_images.append({
+                "path": str(image_path),
+                "size": image_config.get("size", "medium"),
+                "position": image_config.get("position"),  # Pass position to ffMpeg
+                "start": absolute_start,
+                "end": absolute_end,
+            })
+            
+            size = image_config.get("size", "medium")
+            position = image_config.get("position", "default")
+            print(f"📷 Image '{filename}' scheduled: {absolute_start:.2f}s - {absolute_end:.2f}s ({size} @ {position})")
     
     return educational_images
 

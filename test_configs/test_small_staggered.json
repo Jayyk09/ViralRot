@@ -4,34 +4,36 @@
   "output_file": "tmp/test_videos/test_small_staggered.mp4",
   "dialogue": [
     {
-      "caption": "Check out this icon at the top of the zigzag!",
+      "caption": "Check out these three icons appearing at the same time in a zigzag!",
       "speaker": "PETER",
       "emotion": "excited",
-      "image": {
-        "filename": "small_icon_1.png",
-        "size": "small",
-        "position": "right-high"
-      }
+      "images": [
+        {
+          "filename": "small_icon_1.png",
+          "size": "small",
+          "position": "right-high"
+        },
+        {
+          "filename": "small_icon_2.png",
+          "size": "small",
+          "position": "right-mid"
+        },
+        {
+          "filename": "small_icon_3.png",
+          "size": "small",
+          "position": "right-low"
+        }
+      ]
     },
     {
-      "caption": "And this one is staggered to the left in the middle.",
+      "caption": "All three small images appear simultaneously in a staggered pattern.",
       "speaker": "STEWIE",
-      "emotion": "neutral",
-      "image": {
-        "filename": "small_icon_2.png",
-        "size": "small",
-        "position": "right-mid"
-      }
+      "emotion": "neutral"
     },
     {
-      "caption": "Finally, this one is at the bottom, creating a zigzag pattern!",
+      "caption": "The zigzag layout keeps them organized without cluttering the screen.",
       "speaker": "PETER",
-      "emotion": "neutral",
-      "image": {
-        "filename": "small_icon_3.png",
-        "size": "small",
-        "position": "right-low"
-      }
+      "emotion": "neutral"
     },
     {
       "caption": "This staggered pattern looks really clean and organized.",
