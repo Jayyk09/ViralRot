@@ -6,21 +6,24 @@ from backend_pipeline.video_assembly.ass_generator import generate_ass_subtitle_
 
 # ============ Image Size and Position Constants ============
 IMAGE_SIZES = {
-    "small": 300,   # Icon-size images, flexible positioning
-    "medium": 600,  # Mid-size diagrams, top corners
+    "small": 300,   # Icon-size images, staggered in lower right half
+    "medium": 540,  # Mid-size diagrams, 50% of 1080px width for side-by-side fit
     "large": 800,   # Full-width diagrams, top-center
 }
 
+# Reduced size for medium images at bottom-right position (to avoid character overlap)
+MEDIUM_BOTTOM_SIZE = 400
+
 # Valid positions for each image size
 VALID_POSITIONS = {
-    "small": ["top-left", "top-right", "bottom-right"],
-    "medium": ["top-left", "top-right"],
+    "small": ["right-high", "right-mid", "right-low"],  # Staggered zigzag in lower right half
+    "medium": ["top-left", "top-right", "bottom-right"],  # Added bottom-right for context
     "large": ["top-center"],
 }
 
 # Default positions when not specified
 DEFAULT_POSITIONS = {
-    "small": "top-right",
+    "small": "right-low",    # Bottom of staggered pattern
     "medium": "top-right",
     "large": "top-center",
 }
@@ -28,8 +31,8 @@ DEFAULT_POSITIONS = {
 # Image limits per video
 IMAGE_LIMITS = {
     "large": 1,    # Max 1 large image at a time
-    "medium": 2,   # Max 2 medium images at a time  
-    "small": 3,    # Max 3 small images at a time
+    "medium": 2,   # Max 2 medium images at a time (e.g., top-left + bottom-right)
+    "small": 3,    # Max 3 small images at a time (staggered pattern)
 }
 
 
@@ -39,28 +42,38 @@ def calculate_image_position(size: str, position: str, video_width: int = 1080, 
     
     Args:
         size: "small", "medium", or "large"
-        position: Position string (e.g., "top-right", "bottom-right")
+        position: Position string (e.g., "top-right", "right-high", "bottom-right")
         video_width: Video canvas width in pixels
         video_height: Video canvas height in pixels
     
     Returns:
         tuple: (x_expression, y_expression) for FFmpeg overlay filter
+    
+    Layout:
+        - Small images: Staggered zigzag pattern in lower right half
+            - right-high: y=1000, far right
+            - right-mid: y=1250, staggered 150px left (creates zigzag)
+            - right-low: y=1500, far right
+        - Medium images: Top corners (540px) or bottom-right (400px for context)
+        - Large images: Top center (800px)
     """
     MARGIN = 50  # Pixels from edge
     TOP_Y = 100  # Y position for top images
+    STAGGER_OFFSET = 150  # Horizontal offset for zigzag pattern
     
     # Position mappings - FFmpeg expressions
     positions = {
-        # Small images - top corners and bottom-right (next to characters)
+        # Small images - staggered zigzag in lower right half (below captions area)
         "small": {
-            "top-left": (f"{MARGIN}", f"{TOP_Y}"),
-            "top-right": (f"W-w-{MARGIN}", f"{TOP_Y}"),
-            "bottom-right": (f"W-w-{MARGIN}", f"H-h-{MARGIN}"),  # Bottom-right, margin from edge
+            "right-high": (f"W-w-{MARGIN}", "1000"),                     # Far right, y=1000
+            "right-mid": (f"W-w-{MARGIN + STAGGER_OFFSET}", "1250"),    # Staggered left, y=1250
+            "right-low": (f"W-w-{MARGIN}", "1500"),                     # Far right, y=1500
         },
-        # Medium images - top corners only
+        # Medium images - top corners (540px) and bottom-right (400px for context)
         "medium": {
             "top-left": (f"{MARGIN}", f"{TOP_Y}"),
             "top-right": (f"W-w-{MARGIN}", f"{TOP_Y}"),
+            "bottom-right": (f"W-w-{MARGIN}", f"H-h-{MARGIN}"),         # Next to characters
         },
         # Large images - top-center only
         "large": {
@@ -132,10 +145,10 @@ def create_video_with_audio_and_captions(
         stewie_image: Deprecated - images now selected based on emotion
         educational_images: List of educational image configs with:
             - path: Image file path
-            - size: "small" (300px), "medium" (600px), or "large" (800px)
+            - size: "small" (300px), "medium" (540px top, 400px bottom), or "large" (800px)
             - position: Optional position string (default varies by size)
-                - small: "top-left", "top-right", "bottom-right"
-                - medium: "top-left", "top-right"
+                - small: "right-high", "right-mid", "right-low" (staggered zigzag in lower right)
+                - medium: "top-left", "top-right", "bottom-right" (bottom uses 400px)
                 - large: "top-center"
             - start: Start time in seconds
             - end: End time in seconds
@@ -352,7 +365,7 @@ def create_video_with_audio_and_captions(
     # ============ Educational Images Overlay ============
     # Scale and overlay educational images with fade effects
     # Uses IMAGE_SIZES and calculate_image_position() defined at module level
-    # Supports: small (300px), medium (600px), large (800px)
+    # Supports: small (300px), medium (540px top, 400px bottom), large (800px)
     # Limits: 1 large OR 2 medium, AND up to 3 small simultaneously
     # Fade: 0.3s fade in/out
     
@@ -362,6 +375,14 @@ def create_video_with_audio_and_captions(
     
     FADE_DURATION = 0.3  # seconds for fade in/out
     
+    def get_image_width(size_name: str, position: str) -> int:
+        """Get the appropriate width for an image based on size and position."""
+        # Special case: medium images at bottom-right use reduced size (400px)
+        # to avoid overlapping with characters on the left side
+        if size_name == "medium" and position == "bottom-right":
+            return MEDIUM_BOTTOM_SIZE  # 400px
+        return IMAGE_SIZES.get(size_name, IMAGE_SIZES["medium"])
+    
     # Scale educational images
     for i, edu_img in enumerate(edu_images):
         if not os.path.exists(edu_img["path"]):
@@ -370,7 +391,7 @@ def create_video_with_audio_and_captions(
         
         size_name = edu_img.get("size", "medium")
         position = edu_img.get("position", DEFAULT_POSITIONS.get(size_name, "top-right"))
-        width = IMAGE_SIZES.get(size_name, IMAGE_SIZES["medium"])
+        width = get_image_width(size_name, position)
         
         stream_name = f"edu_{i}_scaled"
         filter_parts.append(
@@ -380,6 +401,7 @@ def create_video_with_audio_and_captions(
             "stream": f"[{stream_name}]",
             "size": size_name,
             "position": position,  # Store position for overlay step
+            "width": width,  # Store actual width used (for debug logging)
             "start": edu_img["start"],
             "end": edu_img["end"],
             "path": edu_img["path"],
@@ -425,10 +447,11 @@ def create_video_with_audio_and_captions(
         print(f"{'='*60}")
         print(f"Total educational images: {len(edu_scaled_streams)}")
         print(f"Limits: 1 large OR 2 medium, AND up to 3 small")
+        print(f"Note: Medium at bottom-right uses {MEDIUM_BOTTOM_SIZE}px (reduced to avoid character overlap)")
         for i, edu_stream in enumerate(edu_scaled_streams):
             size_name = edu_stream['size']
             position = edu_stream.get('position', DEFAULT_POSITIONS.get(size_name, 'top-right'))
-            width = IMAGE_SIZES.get(size_name, IMAGE_SIZES["medium"])
+            width = edu_stream.get('width', IMAGE_SIZES.get(size_name, IMAGE_SIZES["medium"]))
             x_pos, y_pos = calculate_image_position(size_name, position)
             print(f"  [{i}] {size_name} ({width}px) @ {position}")
             print(f"      Coordinates: x={x_pos}, y={y_pos}")
