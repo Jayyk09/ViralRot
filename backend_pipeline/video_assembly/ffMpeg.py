@@ -351,8 +351,9 @@ def create_video_with_audio_and_captions(
     
     # ============ Educational Images Overlay ============
     # Scale and overlay educational images with fade effects
-    # Image sizes: medium=432px wide, large=800px wide
-    # Positions: medium=top-right, large=top-center
+    # Uses IMAGE_SIZES and calculate_image_position() defined at module level
+    # Supports: small (300px), medium (600px), large (800px)
+    # Limits: 1 large OR 2 medium, AND up to 3 small simultaneously
     # Fade: 0.3s fade in/out
     
     edu_images = educational_images or []
@@ -360,10 +361,6 @@ def create_video_with_audio_and_captions(
     edu_input_start_index = input_index  # Track where edu images start in inputs
     
     FADE_DURATION = 0.3  # seconds for fade in/out
-    IMAGE_SIZES = {
-        "medium": 600,  # Increased from 432px for better visibility (55% of screen width)
-        "large": 800,
-    }
     
     # Scale educational images
     for i, edu_img in enumerate(edu_images):
@@ -372,6 +369,7 @@ def create_video_with_audio_and_captions(
             continue
         
         size_name = edu_img.get("size", "medium")
+        position = edu_img.get("position", DEFAULT_POSITIONS.get(size_name, "top-right"))
         width = IMAGE_SIZES.get(size_name, IMAGE_SIZES["medium"])
         
         stream_name = f"edu_{i}_scaled"
@@ -381,6 +379,7 @@ def create_video_with_audio_and_captions(
         edu_scaled_streams.append({
             "stream": f"[{stream_name}]",
             "size": size_name,
+            "position": position,  # Store position for overlay step
             "start": edu_img["start"],
             "end": edu_img["end"],
             "path": edu_img["path"],
@@ -391,18 +390,11 @@ def create_video_with_audio_and_captions(
     for i, edu_stream in enumerate(edu_scaled_streams):
         start = edu_stream["start"]
         end = edu_stream["end"]
-        duration = end - start
         size_name = edu_stream["size"]
+        position = edu_stream["position"]
         
-        # Positioning based on size
-        # medium: top-right with 50px margin
-        # large: top-center
-        if size_name == "large":
-            x_pos = "(W-w)/2"  # Center horizontally
-        else:  # medium
-            x_pos = "W-w-50"   # Right side with 50px margin
-        
-        y_pos = "100"  # 100px from top
+        # Get position coordinates using the calculator function
+        x_pos, y_pos = calculate_image_position(size_name, position)
         
         # Fade expression: fade in for first 0.3s, fade out for last 0.3s
         fade_in_end = start + FADE_DURATION
