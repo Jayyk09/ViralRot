@@ -1,0 +1,57 @@
+{
+  "audio_file": "assets/audio/generated/session_f7eae00bafef497788d9d0a386968f04/The_Rule_of_72_full.mp3",
+  "background_video": "assets/videos/minecraft.mp4",
+  "output_file": "tmp/test_videos/test_small_staggered.mp4",
+  "dialogue": [
+    {
+      "caption": "Check out this icon at the top of the zigzag!",
+      "speaker": "PETER",
+      "emotion": "excited",
+      "image": {
+        "filename": "small_icon_1.png",
+        "size": "small",
+        "position": "right-high"
+      }
+    },
+    {
+      "caption": "And this one is staggered to the left in the middle.",
+      "speaker": "STEWIE",
+      "emotion": "neutral",
+      "image": {
+        "filename": "small_icon_2.png",
+        "size": "small",
+        "position": "right-mid"
+      }
+    },
+    {
+      "caption": "Finally, this one is at the bottom, creating a zigzag pattern!",
+      "speaker": "PETER",
+      "emotion": "neutral",
+      "image": {
+        "filename": "small_icon_3.png",
+        "size": "small",
+        "position": "right-low"
+      }
+    },
+    {
+      "caption": "This staggered pattern looks really clean and organized.",
+      "speaker": "STEWIE",
+      "emotion": "excited"
+    },
+    {
+      "caption": "All three small images stay in the lower right half of the video.",
+      "speaker": "PETER",
+      "emotion": "neutral"
+    },
+    {
+      "caption": "Perfect for showing supporting icons without blocking the main content.",
+      "speaker": "STEWIE",
+      "emotion": "neutral"
+    }
+  ],
+  "images": {
+    "small_icon_1.png": "tmp/test_images/small_icon_1.png",
+    "small_icon_2.png": "tmp/test_images/small_icon_2.png",
+    "small_icon_3.png": "tmp/test_images/small_icon_3.png"
+  }
+}
