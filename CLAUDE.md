@@ -149,24 +149,82 @@ Videos can include educational images overlaid during specific dialogue lines.
 4. Add `image` references to dialogue lines in the JSON
 5. `POST /jobs/generate-video` with `transcript_id` and images
 
-**Image Configuration:**
+### Image Sizes and Positions
+
+| Size | Width | Available Positions | Default |
+|------|-------|---------------------|---------|
+| small | 300px | top-left, top-right, bottom-right | top-right |
+| medium | 600px | top-left, top-right | top-right |
+| large | 800px | top-center | top-center |
+
+**Limits:** 1 large OR 2 medium images (top area), AND up to 3 small images simultaneously
+
+**API Endpoint:** `GET /images/positions` - Returns all sizes, positions, and limits
+
+### Image Configuration Examples
+
+**Single image (basic):**
 ```json
 {
   "caption": "Look at this diagram!",
   "speaker": "STEWIE",
   "image": {
     "filename": "diagram.png",
-    "size": "large",        // "medium" (432px, top-right) or "large" (800px, top-center)
-    "start_time": 0.5,      // optional: delay after line starts
-    "duration": 3.0         // optional: display duration
+    "size": "medium",
+    "position": "top-right",
+    "start_time": 0.5,
+    "duration": 3.0
+  }
+}
+```
+
+**Two medium images (side by side):**
+```json
+{
+  "caption": "Compare these diagrams!",
+  "speaker": "PETER",
+  "image": {
+    "filename": "before.png",
+    "size": "medium",
+    "position": "top-left"
+  }
+}
+// Another dialogue line with:
+{
+  "image": {
+    "filename": "after.png",
+    "size": "medium", 
+    "position": "top-right"
+  }
+}
+```
+
+**Small image next to character:**
+```json
+{
+  "caption": "Check this icon!",
+  "speaker": "STEWIE",
+  "image": {
+    "filename": "icon.png",
+    "size": "small",
+    "position": "bottom-right"
   }
 }
 ```
 
 **Video Layout:**
-- Characters: Bottom-left (both Peter and Stewie)
-- Educational images: Top area (right for medium, center for large)
-- Captions: Center of screen
+```
+┌─────────────────────────────────────────┐
+│ [SMALL]   [MEDIUM/LARGE]      [SMALL]  │  ← Top (y=100px)
+│ top-left     top area        top-right │
+│                                         │
+│            [CAPTIONS]                   │  ← Center
+│                                         │
+│ [CHAR]                        [SMALL]  │  ← Bottom
+│ [CHAR]                     bottom-right│
+│ left side                               │
+└─────────────────────────────────────────┘
+```
 
 ## Karaoke Caption Mode
 
