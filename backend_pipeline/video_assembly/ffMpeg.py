@@ -4,6 +4,83 @@ import textwrap
 
 from backend_pipeline.video_assembly.ass_generator import generate_ass_subtitle_file
 
+# ============ Image Size and Position Constants ============
+IMAGE_SIZES = {
+    "small": 300,   # Icon-size images, flexible positioning
+    "medium": 600,  # Mid-size diagrams, top corners
+    "large": 800,   # Full-width diagrams, top-center
+}
+
+# Valid positions for each image size
+VALID_POSITIONS = {
+    "small": ["top-left", "top-right", "bottom-right"],
+    "medium": ["top-left", "top-right"],
+    "large": ["top-center"],
+}
+
+# Default positions when not specified
+DEFAULT_POSITIONS = {
+    "small": "top-right",
+    "medium": "top-right",
+    "large": "top-center",
+}
+
+# Image limits per video
+IMAGE_LIMITS = {
+    "large": 1,    # Max 1 large image at a time
+    "medium": 2,   # Max 2 medium images at a time  
+    "small": 3,    # Max 3 small images at a time
+}
+
+
+def calculate_image_position(size: str, position: str, video_width: int = 1080, video_height: int = 1920):
+    """
+    Calculate x,y coordinates for educational image overlay.
+    
+    Args:
+        size: "small", "medium", or "large"
+        position: Position string (e.g., "top-right", "bottom-right")
+        video_width: Video canvas width in pixels
+        video_height: Video canvas height in pixels
+    
+    Returns:
+        tuple: (x_expression, y_expression) for FFmpeg overlay filter
+    """
+    MARGIN = 50  # Pixels from edge
+    TOP_Y = 100  # Y position for top images
+    
+    # Position mappings - FFmpeg expressions
+    positions = {
+        # Small images - top corners and bottom-right (next to characters)
+        "small": {
+            "top-left": (f"{MARGIN}", f"{TOP_Y}"),
+            "top-right": (f"W-w-{MARGIN}", f"{TOP_Y}"),
+            "bottom-right": (f"W-w-{MARGIN}", f"H-h-{MARGIN}"),  # Bottom-right, margin from edge
+        },
+        # Medium images - top corners only
+        "medium": {
+            "top-left": (f"{MARGIN}", f"{TOP_Y}"),
+            "top-right": (f"W-w-{MARGIN}", f"{TOP_Y}"),
+        },
+        # Large images - top-center only
+        "large": {
+            "top-center": (f"(W-w)/2", f"{TOP_Y}"),
+        },
+    }
+    
+    # Get default position for size if not specified or invalid
+    if size not in positions:
+        print(f"⚠️  Warning: Unknown size '{size}', using medium")
+        size = "medium"
+    
+    if position not in positions[size]:
+        default_pos = DEFAULT_POSITIONS.get(size, "top-right")
+        print(f"⚠️  Warning: Position '{position}' not valid for size '{size}', using '{default_pos}'")
+        position = default_pos
+    
+    return positions[size][position]
+
+
 def wrap_caption_text(text, max_chars=32):
     """Wrap caption text to a maximum characters per line (word-aware)."""
     wrapped_lines = textwrap.wrap(text, width=max_chars)
@@ -55,9 +132,15 @@ def create_video_with_audio_and_captions(
         stewie_image: Deprecated - images now selected based on emotion
         educational_images: List of educational image configs with:
             - path: Image file path
-            - size: "medium" (432px) or "large" (800px)
+            - size: "small" (300px), "medium" (600px), or "large" (800px)
+            - position: Optional position string (default varies by size)
+                - small: "top-left", "top-right", "bottom-right"
+                - medium: "top-left", "top-right"
+                - large: "top-center"
             - start: Start time in seconds
             - end: End time in seconds
+            
+            Limits: 1 large OR 2 medium, AND up to 3 small images simultaneously
         caption_mode: Caption style - "box" for background box, "karaoke" for word highlight
     
     Returns:
@@ -89,6 +172,16 @@ def create_video_with_audio_and_captions(
                 else:
                     print(f"⚠️  Warning: Character image not found: {image_path}")
                     character_images[key] = None
+    
+    # Debug: Print loaded character images
+    print(f"\n{'='*60}")
+    print(f"🎭 CHARACTER IMAGE DEBUG")
+    print(f"{'='*60}")
+    print(f"Total character images loaded: {len(character_images)}")
+    for i, (key, image_path) in enumerate(character_images.items()):
+        speaker, emotion = key
+        print(f"  [{i}] {speaker} ({emotion}): {image_path}")
+    print(f"{'='*60}\n")
     
     # Get audio duration
     duration_cmd = [
@@ -211,6 +304,18 @@ def create_video_with_audio_and_captions(
             character_scaled_streams[key] = f"[{stream_name}]"
             input_index += 1
     
+    # Debug: Print scaled character streams
+    print(f"\n{'='*60}")
+    print(f"📐 CHARACTER SCALING DEBUG")
+    print(f"{'='*60}")
+    print(f"Character height: {character_height}px")
+    print(f"Stewie margin (x-offset): {stewie_margin}px")
+    print(f"Peter margin (x-offset): {peter_margin}px")
+    for key, stream in character_scaled_streams.items():
+        speaker, emotion = key
+        print(f"  {speaker} ({emotion}) -> {stream}")
+    print(f"{'='*60}\n")
+    
     # Overlay characters in order: Both on bottom-left (right side free for images)
     # Group by speaker to maintain consistent positioning
     stewie_keys = [k for k in character_images.keys() if k[0] == "STEWIE"]
@@ -222,9 +327,11 @@ def create_video_with_audio_and_captions(
     for key in stewie_keys:
         if key in character_scaled_streams and character_images[key]:
             enable_expr = character_enables[key]
+            overlay_cmd = f"overlay={stewie_margin}:H-h-{stewie_margin}:enable='{enable_expr}'"
+            print(f"  🎭 Stewie ({key[1]}): x={stewie_margin}, y=H-h-{stewie_margin} (LEFT SIDE)")
             filter_parts.append(
                 f"{current_stream}{character_scaled_streams[key]}"
-                f"overlay={stewie_margin}:H-h-{stewie_margin}:enable='{enable_expr}'[tmp_{overlay_count}]"
+                f"{overlay_cmd}[tmp_{overlay_count}]"
             )
             current_stream = f"[tmp_{overlay_count}]"
             overlay_count += 1
@@ -233,9 +340,11 @@ def create_video_with_audio_and_captions(
     for key in peter_keys:
         if key in character_scaled_streams and character_images[key]:
             enable_expr = character_enables[key]
+            overlay_cmd = f"overlay={peter_margin}:H-h-{peter_margin}:enable='{enable_expr}'"
+            print(f"  🎭 Peter ({key[1]}): x={peter_margin}, y=H-h-{peter_margin} (LEFT SIDE)")
             filter_parts.append(
                 f"{current_stream}{character_scaled_streams[key]}"
-                f"overlay={peter_margin}:H-h-{peter_margin}:enable='{enable_expr}'[tmp_{overlay_count}]"
+                f"{overlay_cmd}[tmp_{overlay_count}]"
             )
             current_stream = f"[tmp_{overlay_count}]"
             overlay_count += 1
@@ -252,7 +361,7 @@ def create_video_with_audio_and_captions(
     
     FADE_DURATION = 0.3  # seconds for fade in/out
     IMAGE_SIZES = {
-        "medium": 432,
+        "medium": 600,  # Increased from 432px for better visibility (55% of screen width)
         "large": 800,
     }
     
@@ -319,7 +428,18 @@ def create_video_with_audio_and_captions(
         overlay_count += 1
     
     if edu_images:
-        print(f"📷 Added {len(edu_scaled_streams)} educational image overlays")
+        print(f"\n{'='*60}")
+        print(f"📷 EDUCATIONAL IMAGES DEBUG")
+        print(f"{'='*60}")
+        print(f"Total educational images: {len(edu_scaled_streams)}")
+        for i, edu_stream in enumerate(edu_scaled_streams):
+            size_name = edu_stream['size']
+            width = IMAGE_SIZES.get(size_name, IMAGE_SIZES["medium"])
+            pos = "top-right" if size_name == "medium" else "top-center"
+            print(f"  [{i}] {size_name} ({width}px) - {pos}")
+            print(f"      Path: {edu_stream['path']}")
+            print(f"      Time: {edu_stream['start']:.2f}s - {edu_stream['end']:.2f}s")
+        print(f"{'='*60}\n")
     
     # Add captions on top (either drawtext or ASS)
     if caption_mode == "karaoke" and ass_file_path:
@@ -334,6 +454,19 @@ def create_video_with_audio_and_captions(
         filter_parts.append(f"{current_stream}split[v]") # Use split to ensure a named output stream even if no captions
     
     filter_complex = ";".join(filter_parts)
+    
+    # Debug: Print the complete filter_complex command
+    print(f"\n{'='*60}")
+    print(f"🔧 FFMPEG FILTER_COMPLEX DEBUG")
+    print(f"{'='*60}")
+    print(f"Full filter_complex ({len(filter_parts)} steps):")
+    for i, step in enumerate(filter_parts):
+        # Highlight overlay commands
+        if "overlay=" in step:
+            print(f"  Step {i+1} [OVERLAY]: {step[:100]}{'...' if len(step) > 100 else ''}")
+        else:
+            print(f"  Step {i+1}: {step[:80]}{'...' if len(step) > 80 else ''}")
+    print(f"{'='*60}\n")
     
     # Build ffmpeg command
     cmd = [
@@ -354,6 +487,23 @@ def create_video_with_audio_and_captions(
     # Add educational image inputs
     for edu_stream in edu_scaled_streams:
         cmd.extend(["-loop", "1", "-i", edu_stream["path"]])
+    
+    # Debug: Log input indices to verify they match filter order
+    print(f"\n{'='*60}")
+    print(f"🎬 FFMPEG INPUT ORDER DEBUG")
+    print(f"{'='*60}")
+    print(f"Input [0]: Background video - {background_video}")
+    print(f"Input [1]: Audio - {audio_file}")
+    input_debug_idx = 2
+    for key, image_path in character_images.items():
+        if image_path:
+            speaker, emotion = key
+            print(f"Input [{input_debug_idx}]: Character {speaker} ({emotion}) - {image_path}")
+            input_debug_idx += 1
+    for i, edu_stream in enumerate(edu_scaled_streams):
+        print(f"Input [{input_debug_idx}]: Educational image {i} - {edu_stream['path']}")
+        input_debug_idx += 1
+    print(f"{'='*60}\n")
     
     # Add filter complex and output settings
     cmd.extend([
