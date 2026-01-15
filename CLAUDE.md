@@ -153,11 +153,20 @@ Videos can include educational images overlaid during specific dialogue lines.
 
 | Size | Width | Available Positions | Default |
 |------|-------|---------------------|---------|
-| small | 300px | top-left, top-right, bottom-right | top-right |
-| medium | 600px | top-left, top-right | top-right |
+| small | 300px | right-high, right-mid, right-low | right-low |
+| medium | 540px (top), 400px (bottom) | top-left, top-right, bottom-right | top-right |
 | large | 800px | top-center | top-center |
 
-**Limits:** 1 large OR 2 medium images (top area), AND up to 3 small images simultaneously
+**Limits:** 1 large OR 2 medium images, AND up to 3 small images simultaneously
+
+**Small Image Layout**: Small images appear in a staggered zigzag pattern in the lower right half:
+- `right-high`: Far right, y=1000px
+- `right-mid`: Staggered 150px left, y=1250px (creates zigzag)
+- `right-low`: Far right, y=1500px
+
+**Medium at Bottom**: Medium images at `bottom-right` are automatically reduced to 400px width to avoid overlapping with characters.
+
+**Use Case**: Display large diagram at top + medium context/explanation at bottom-right.
 
 **API Endpoint:** `GET /images/positions` - Returns all sizes, positions, and limits
 
@@ -171,14 +180,12 @@ Videos can include educational images overlaid during specific dialogue lines.
   "image": {
     "filename": "diagram.png",
     "size": "medium",
-    "position": "top-right",
-    "start_time": 0.5,
-    "duration": 3.0
+    "position": "top-right"
   }
 }
 ```
 
-**Two medium images (side by side):**
+**Two medium images (side by side at 540px each):**
 ```json
 {
   "caption": "Compare these diagrams!",
@@ -199,14 +206,59 @@ Videos can include educational images overlaid during specific dialogue lines.
 }
 ```
 
-**Small image next to character:**
+**Small images in staggered zigzag pattern:**
 ```json
+// First dialogue line:
 {
-  "caption": "Check this icon!",
+  "caption": "First icon at top of zigzag!",
+  "speaker": "PETER",
+  "image": {
+    "filename": "icon1.png",
+    "size": "small",
+    "position": "right-high"
+  }
+}
+// Second dialogue line:
+{
+  "caption": "Second icon staggered left!",
   "speaker": "STEWIE",
   "image": {
-    "filename": "icon.png",
+    "filename": "icon2.png",
     "size": "small",
+    "position": "right-mid"
+  }
+}
+// Third dialogue line:
+{
+  "caption": "Third icon at bottom!",
+  "speaker": "PETER",
+  "image": {
+    "filename": "icon3.png",
+    "size": "small",
+    "position": "right-low"
+  }
+}
+```
+
+**Large diagram with medium context (bottom-right at 400px):**
+```json
+// First dialogue line:
+{
+  "caption": "Here is the main concept!",
+  "speaker": "PETER",
+  "image": {
+    "filename": "main_diagram.png",
+    "size": "large",
+    "position": "top-center"
+  }
+}
+// Second dialogue line:
+{
+  "caption": "And here is additional context!",
+  "speaker": "STEWIE",
+  "image": {
+    "filename": "context.png",
+    "size": "medium",
     "position": "bottom-right"
   }
 }
@@ -215,15 +267,19 @@ Videos can include educational images overlaid during specific dialogue lines.
 **Video Layout:**
 ```
 ┌─────────────────────────────────────────┐
-│ [SMALL]   [MEDIUM/LARGE]      [SMALL]  │  ← Top (y=100px)
-│ top-left     top area        top-right │
+│ [MEDIUM]              [MEDIUM]          │  ← Top (y=100)
+│ 540px                  540px            │
 │                                         │
 │            [CAPTIONS]                   │  ← Center
-│                                         │
-│ [CHAR]                        [SMALL]  │  ← Bottom
-│ [CHAR]                     bottom-right│
-│ left side                               │
+│                              [SMALL]    │  ← right-high (y=1000)
+│                       [SMALL]           │  ← right-mid (y=1250, staggered)
+│ [CHAR]                       [SMALL]    │  ← right-low (y=1500)
+│ [CHAR]    [MEDIUM]                      │  ← bottom-right (400px, y=H-h-50)
 └─────────────────────────────────────────┘
+
+Video dimensions: 1080w × 1920h (portrait 9:16)
+Characters: 800px height, x=0 (left side)
+All images: 50px margin from edges
 ```
 
 ## Karaoke Caption Mode
