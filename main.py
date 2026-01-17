@@ -751,9 +751,14 @@ async def _process_video_job(
         print(f"  dialogue_data keys: {dialogue_data.keys() if dialogue_data else 'None'}")
         if dialogue_data and 'dialogue' in dialogue_data:
             print(f"  dialogue lines: {len(dialogue_data['dialogue'])}")
-            # Check for image references in dialogue
-            img_count = sum(1 for line in dialogue_data['dialogue'] if line.get('image'))
-            print(f"  lines with images: {img_count}")
+            # Check for image references in dialogue (both single and array format)
+            single_img_count = sum(1 for line in dialogue_data['dialogue'] if line.get('image'))
+            array_img_count = sum(1 for line in dialogue_data['dialogue'] if line.get('images'))
+            print(f"  lines with 'image': {single_img_count}")
+            print(f"  lines with 'images' array: {array_img_count}")
+            # Count total images in arrays
+            total_array_images = sum(len(line.get('images', [])) for line in dialogue_data['dialogue'])
+            print(f"  total images in arrays: {total_array_images}")
         print(f"{'='*50}\n")
         
         video_result = await _run_blocking(

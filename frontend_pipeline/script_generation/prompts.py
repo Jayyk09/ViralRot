@@ -8,7 +8,7 @@ Listen to or process the audio's content.
 
 Identify the KEY CONCEPTS discussed in the audio.
 
-Generate a SINGLE conversational dialogue (~1 minute, 120-150 words total) that summarizes the main concepts in an educational and humorous way.
+Generate a SINGLE conversational dialogue (~2 minutes, 200-300 words total) that summarizes the main concepts in an educational and humorous way.
 
 Output a SINGLE JSON object structured exactly like this:
 {
@@ -16,17 +16,17 @@ Output a SINGLE JSON object structured exactly like this:
     "title": "A short, descriptive title for this conversation.",
     "dialogue": [
       {
-        "caption": "A single sentence under 20 words.",
+        "caption": "A sentence or two that explains the concept clearly, up to 30 words.",
         "speaker": "PETER",
         "emotion": "neutral"
       },
       {
-        "caption": "Another single sentence under 20 words.",
+        "caption": "Another sentence asking a question or responding, up to 30 words.",
         "speaker": "STEWIE",
         "emotion": "confused"
       },
       {
-        "caption": "That's a great question! Let me explain...",
+        "caption": "That's a great question! Let me explain what that means in more detail.",
         "speaker": "PETER",
         "emotion": "excited"
       }
@@ -38,11 +38,11 @@ RULES:
 
 Generate ONE conversation covering the main concepts from the audio.
 
-Target length: ~1 minute of spoken dialogue (approximately 120-150 words total).
+Target length: ~2 minutes of spoken dialogue (approximately 200-300 words total).
 
-Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 6-10 exchanges).
+Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 8-15 exchanges).
 
-Each "caption" must be one sentence only, 20 words or fewer.
+Each "caption" should be 15-30 words. Aim for substantial explanations, not just short quips.
 
 Speakers must be only "PETER" or "STEWIE".
 
@@ -72,7 +72,7 @@ Read and process the text's content.
 
 Identify the KEY CONCEPTS discussed in the text.
 
-Generate a SINGLE conversational dialogue (~1 minute, 120-150 words total) that summarizes the main concepts in an educational and humorous way.
+Generate a SINGLE conversational dialogue (~2 minutes, 200-300 words total) that summarizes the main concepts in an educational and humorous way.
 
 Output a SINGLE JSON object structured exactly like this:
 {
@@ -80,17 +80,17 @@ Output a SINGLE JSON object structured exactly like this:
     "title": "A short, descriptive title for this conversation.",
     "dialogue": [
       {
-        "caption": "A single sentence under 20 words.",
+        "caption": "A sentence or two that explains the concept clearly, up to 30 words.",
         "speaker": "PETER",
         "emotion": "neutral"
       },
       {
-        "caption": "Another single sentence under 20 words.",
+        "caption": "Another sentence asking a question or responding, up to 30 words.",
         "speaker": "STEWIE",
         "emotion": "confused"
       },
       {
-        "caption": "That's a great question! Let me explain...",
+        "caption": "That's a great question! Let me explain what that means in more detail.",
         "speaker": "PETER",
         "emotion": "excited"
       }
@@ -102,11 +102,11 @@ RULES:
 
 Generate ONE conversation covering the main concepts from the text.
 
-Target length: ~1 minute of spoken dialogue (approximately 120-150 words total).
+Target length: ~2 minutes of spoken dialogue (approximately 200-300 words total).
 
-Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 6-10 exchanges).
+Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 8-15 exchanges).
 
-Each "caption" must be one sentence only, 20 words or fewer.
+Each "caption" should be 15-30 words. Aim for substantial explanations, not just short quips.
 
 Speakers must be only "PETER" or "STEWIE".
 
@@ -136,7 +136,7 @@ Read and process the content of the PowerPoint slides.
 
 Identify the KEY CONCEPTS discussed in the PowerPoint.
 
-Generate a SINGLE conversational dialogue (~1 minute, 120-150 words total) that summarizes the main concepts in an educational and humorous way.
+Generate a SINGLE conversational dialogue (~2 minutes, 200-300 words total) that summarizes the main concepts in an educational and humorous way.
 
 Output a SINGLE JSON object structured exactly like this:
 {
@@ -144,17 +144,17 @@ Output a SINGLE JSON object structured exactly like this:
     "title": "A short, descriptive title for this conversation.",
     "dialogue": [
       {
-        "caption": "A single sentence under 20 words.",
+        "caption": "A sentence or two that explains the concept clearly, up to 30 words.",
         "speaker": "PETER",
         "emotion": "neutral"
       },
       {
-        "caption": "Another single sentence under 20 words.",
+        "caption": "Another sentence asking a question or responding, up to 30 words.",
         "speaker": "STEWIE",
         "emotion": "confused"
       },
       {
-        "caption": "That's a great question! Let me explain...",
+        "caption": "That's a great question! Let me explain what that means in more detail.",
         "speaker": "PETER",
         "emotion": "excited"
       }
@@ -166,11 +166,11 @@ RULES:
 
 Generate ONE conversation covering the main concepts from the PowerPoint.
 
-Target length: ~1 minute of spoken dialogue (approximately 120-150 words total).
+Target length: ~2 minutes of spoken dialogue (approximately 200-300 words total).
 
-Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 6-10 exchanges).
+Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 8-15 exchanges).
 
-Each "caption" must be one sentence only, 20 words or fewer.
+Each "caption" should be 15-30 words. Aim for substantial explanations, not just short quips.
 
 Speakers must be only "PETER" or "STEWIE".
 

@@ -79,8 +79,12 @@ def _build_educational_images_list(
     """
     Extract educational image configs from dialogue and calculate absolute timing.
     
+    Supports both single image and multiple images per dialogue line:
+    - "image": {...} - Single image (backward compatible)
+    - "images": [{...}, {...}] - Multiple images displayed simultaneously
+    
     Args:
-        dialogue: List of dialogue lines with optional 'image' field
+        dialogue: List of dialogue lines with optional 'image' or 'images' field
         audio_timings: List of timing dicts with 'start' and 'end' for each line
         image_dir: Directory containing the educational images
     
@@ -89,7 +93,8 @@ def _build_educational_images_list(
         [
             {
                 "path": "/path/to/image.png",
-                "size": "medium" or "large",
+                "size": "small", "medium", or "large",
+                "position": "top-right", "right-high", etc.,
                 "start": 1.5,  # absolute start time
                 "end": 4.2,    # absolute end time
             }
@@ -101,51 +106,64 @@ def _build_educational_images_list(
     educational_images = []
     
     for i, line in enumerate(dialogue):
-        image_config = line.get("image")
-        if not image_config:
+        # Support both "images" array (new) and "image" (backward compatible)
+        image_configs = []
+        
+        # Check for "images" array first (new format for simultaneous display)
+        if "images" in line and isinstance(line["images"], list):
+            image_configs = line["images"]
+        # Fall back to single "image" (backward compatible)
+        elif "image" in line and line["image"]:
+            image_configs = [line["image"]]
+        
+        if not image_configs:
             continue
         
         # Skip if we don't have timing for this line
         if i >= len(audio_timings):
-            print(f"⚠️  Warning: No timing for dialogue line {i}, skipping image")
+            print(f"⚠️  Warning: No timing for dialogue line {i}, skipping images")
             continue
         
         timing = audio_timings[i]
         line_start = timing["start"]
         line_end = timing["end"]
-        line_duration = line_end - line_start
         
-        # Build image path
-        filename = image_config.get("filename")
-        if not filename:
-            continue
-        
-        image_path = image_dir / filename
-        if not image_path.exists():
-            print(f"⚠️  Warning: Image not found: {image_path}")
-            continue
-        
-        # Calculate timing
-        # start_time: offset from line start (default 0)
-        # duration: how long to show (default: entire line)
-        custom_start = image_config.get("start_time", 0) or 0
-        custom_duration = image_config.get("duration")
-        
-        absolute_start = line_start + custom_start
-        
-        if custom_duration:
-            absolute_end = min(absolute_start + custom_duration, line_end)
-        else:
-            absolute_end = line_end
-        
-        educational_images.append({
-            "path": str(image_path),
-            "size": image_config.get("size", "medium"),
-            "start": absolute_start,
-            "end": absolute_end,
-        })
-        
-        print(f"📷 Image '{filename}' scheduled: {absolute_start:.2f}s - {absolute_end:.2f}s ({image_config.get('size', 'medium')})")
+        # Process each image config
+        for image_config in image_configs:
+            # Build image path
+            filename = image_config.get("filename")
+            if not filename:
+                continue
+            
+            image_path = image_dir / filename
+            if not image_path.exists():
+                print(f"⚠️  Warning: Image not found: {image_path}")
+                continue
+            
+            # Calculate timing
+            # start_time: offset from line start (default 0)
+            # duration: how long to show (default: entire line)
+            custom_start = image_config.get("start_time", 0) or 0
+            custom_duration = image_config.get("duration")
+            
+            absolute_start = line_start + custom_start
+            
+            if custom_duration:
+                absolute_end = min(absolute_start + custom_duration, line_end)
+            else:
+                absolute_end = line_end
+            
+            educational_images.append({
+                "path": str(image_path),
+                "size": image_config.get("size", "medium"),
+                "position": image_config.get("position"),  # Pass position to ffMpeg
+                "start": absolute_start,
+                "end": absolute_end,
+            })
+            
+            size = image_config.get("size", "medium")
+            position = image_config.get("position", "default")
+            print(f"📷 Image '{filename}' scheduled: {absolute_start:.2f}s - {absolute_end:.2f}s ({size} @ {position})")
     
     return educational_images
 
