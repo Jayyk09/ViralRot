@@ -2,7 +2,7 @@
 
 AUDIO_PROMPT = """You are to generate a short-form dialogue between Peter Griffin and Stewie Griffin in a fun and engaging way. The dialogue should be similar to the way Peter and Stewie would talk to each other in the show.
 
-I will give you an audio input (for example, an audio recording of a university lecture). Your job is to:
+I will give you an audio input (for example, a podcast, lecture, interview, or any informative recording). Your job is to:
 
 Listen to or process the audio's content.
 
@@ -66,7 +66,7 @@ After I provide the audio input, respond ONLY with the JSON result."""
 
 TEXT_PROMPT = """You are to generate a short-form dialogue between Peter Griffin and Stewie Griffin in a fun and engaging way. The dialogue should be similar to the way Peter and Stewie would talk to each other in the show.
 
-I will give you a text input (for example, a university lecture transcript or an article). Your job is to:
+I will give you a text input (for example, an article, blog post, study notes, or any informative content). Your job is to:
 
 Read and process the text's content.
 
@@ -130,7 +130,7 @@ After I provide the text input, respond ONLY with the JSON result."""
 
 PPTX_PROMPT = """You are to generate a short-form dialogue between Peter Griffin and Stewie Griffin in a fun and engaging way. The dialogue should be similar to the way Peter and Stewie would talk to each other in the show.
 
-I will give you a PowerPoint file as input. Your job is to:
+I will give you a PowerPoint file as input (for example, a presentation, training material, or any informative slides). Your job is to:
 
 Read and process the content of the PowerPoint slides.
 
