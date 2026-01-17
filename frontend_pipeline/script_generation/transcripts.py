@@ -137,14 +137,15 @@ def _split_long_dialogue_line(line: dict, threshold: int = CAPTION_SPLIT_THRESHO
         line2["images"] = [img.copy() if isinstance(img, dict) else img for img in line["images"]]
     
     # Estimate duration proportionally based on word count
-    if "duration_estimate" in line:
+    if "duration_estimate" in line and line["duration_estimate"] is not None:
         total_duration = line["duration_estimate"]
         words1 = _count_words(part1)
         words2 = _count_words(part2)
         total_words = words1 + words2
         
-        line1["duration_estimate"] = (words1 / total_words) * total_duration
-        line2["duration_estimate"] = (words2 / total_words) * total_duration
+        if total_words > 0:
+            line1["duration_estimate"] = (words1 / total_words) * total_duration
+            line2["duration_estimate"] = (words2 / total_words) * total_duration
     
     return [line1, line2]
 
