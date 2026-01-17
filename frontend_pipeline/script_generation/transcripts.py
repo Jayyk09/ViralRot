@@ -50,8 +50,10 @@ def _ensure_text(data):
 CAPTION_SPLIT_THRESHOLD = 18  # Max words before auto-splitting
 
 
-def _count_words(text: str) -> int:
+def _count_words(text: str | None) -> int:
     """Count words in a string."""
+    if not text:
+        return 0
     return len(text.split())
 
 
@@ -103,7 +105,7 @@ def _split_long_dialogue_line(line: dict, threshold: int = CAPTION_SPLIT_THRESHO
     Returns:
         List with 1 line (if under threshold) or 2 lines (if split)
     """
-    caption = line.get("caption", "")
+    caption = line.get("caption") or ""
     word_count = _count_words(caption)
     
     # No split needed
@@ -116,25 +118,26 @@ def _split_long_dialogue_line(line: dict, threshold: int = CAPTION_SPLIT_THRESHO
     # Create first line
     line1 = {
         "caption": part1,
-        "speaker": line["speaker"],
-        "emotion": line["emotion"]
+        "speaker": line.get("speaker", "PETER"),
+        "emotion": line.get("emotion", "neutral")
     }
     
     # Create second line
     line2 = {
         "caption": part2,
-        "speaker": line["speaker"],
-        "emotion": line["emotion"]
+        "speaker": line.get("speaker", "PETER"),
+        "emotion": line.get("emotion", "neutral")
     }
     
     # Preserve images on BOTH parts (user preference)
-    if "image" in line and line["image"]:
+    if line.get("image"):
         line1["image"] = line["image"].copy() if isinstance(line["image"], dict) else line["image"]
         line2["image"] = line["image"].copy() if isinstance(line["image"], dict) else line["image"]
     
-    if "images" in line and line["images"]:
-        line1["images"] = [img.copy() if isinstance(img, dict) else img for img in line["images"]]
-        line2["images"] = [img.copy() if isinstance(img, dict) else img for img in line["images"]]
+    images = line.get("images")
+    if images and isinstance(images, list) and len(images) > 0:
+        line1["images"] = [img.copy() if isinstance(img, dict) else img for img in images]
+        line2["images"] = [img.copy() if isinstance(img, dict) else img for img in images]
     
     # Estimate duration proportionally based on word count
     if "duration_estimate" in line and line["duration_estimate"] is not None:
