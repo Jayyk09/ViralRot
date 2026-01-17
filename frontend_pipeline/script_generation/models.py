@@ -8,9 +8,13 @@ from pydantic import BaseModel, Field
 class ImageConfig(BaseModel):
     """Configuration for educational image overlay."""
     filename: str = Field(..., description="Image filename (e.g., 'diagram.png')")
-    size: Literal["medium", "large"] = Field(
+    size: Literal["small", "medium", "large"] = Field(
         default="medium",
-        description="Image size: 'medium' (top-right, 432px) or 'large' (top-center, 800px)"
+        description="Image size: 'small' (300px), 'medium' (540px), or 'large' (800px)"
+    )
+    position: Optional[str] = Field(
+        default=None,
+        description="Position on screen (e.g., 'top-right', 'top-left', 'top-center')"
     )
     start_time: Optional[float] = Field(
         default=None,
@@ -23,12 +27,20 @@ class ImageConfig(BaseModel):
 
 
 class DialogueLine(BaseModel):
-    caption: str = Field(..., description="A single sentence under 20 words.")
+    caption: str = Field(..., description="A sentence up to 30 words (auto-split if over 18 words).")
     speaker: Literal["PETER", "STEWIE"]
     emotion: Literal["neutral", "angry", "excited", "confused"]
     image: Optional[ImageConfig] = Field(
         default=None,
-        description="Optional educational image to display during this line"
+        description="Optional single educational image to display during this line"
+    )
+    images: Optional[List[ImageConfig]] = Field(
+        default=None,
+        description="Optional list of educational images to display simultaneously during this line"
+    )
+    duration_estimate: Optional[float] = Field(
+        default=None,
+        description="Estimated duration in seconds for this line of dialogue"
     )
 
 

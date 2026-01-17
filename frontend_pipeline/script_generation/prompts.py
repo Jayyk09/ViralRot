@@ -44,6 +44,8 @@ Let the conversation flow naturally - use as many dialogue exchanges as needed (
 
 Each "caption" should be 15-30 words. Aim for substantial explanations, not just short quips.
 
+Note: Captions over 18 words will be automatically split into 2 sequential lines for better on-screen readability.
+
 Speakers must be only "PETER" or "STEWIE".
 
 Each object in the "dialogue" array must include an "emotion" field. The value must be one of: "neutral", "angry", "excited", or "confused".
@@ -108,6 +110,8 @@ Let the conversation flow naturally - use as many dialogue exchanges as needed (
 
 Each "caption" should be 15-30 words. Aim for substantial explanations, not just short quips.
 
+Note: Captions over 18 words will be automatically split into 2 sequential lines for better on-screen readability.
+
 Speakers must be only "PETER" or "STEWIE".
 
 Each object in the "dialogue" array must include an "emotion" field. The value must be one of: "neutral", "angry", "excited", or "confused".
@@ -171,6 +175,8 @@ Target length: ~2 minutes of spoken dialogue (approximately 200-300 words total)
 Let the conversation flow naturally - use as many dialogue exchanges as needed (typically 8-15 exchanges).
 
 Each "caption" should be 15-30 words. Aim for substantial explanations, not just short quips.
+
+Note: Captions over 18 words will be automatically split into 2 sequential lines for better on-screen readability.
 
 Speakers must be only "PETER" or "STEWIE".
 
