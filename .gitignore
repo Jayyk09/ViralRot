@@ -9,6 +9,7 @@ __pycache__/
 venv/
 .venv/
 .env
+.pytest_cache/
 
 # Node
 node_modules/
@@ -17,3 +18,18 @@ node_modules/
 # Generated/temp
 tmp/
 test_audio_minimax/
+test_configs/
+
+# Backend generated assets (videos, audio, output)
+backend/assets/audio/generated/
+backend/assets/output/
+backend/assets/sample.json
+backend/assets/test/
+backend/storage/videos/
+
+# Large media files
+*.mp4
+*.mp3
+*.wav
+*.avi
+*.mov
