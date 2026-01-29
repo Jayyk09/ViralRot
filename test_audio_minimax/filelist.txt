@@ -1,0 +1,3 @@
+file 'segment_000_peter.mp3'
+file 'segment_001_stewie.mp3'
+file 'segment_002_peter.mp3'

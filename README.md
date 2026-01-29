@@ -11,7 +11,7 @@ Input (Slides)
     ↓
 [Gemini] Generate script → [{t, c, s}, {t, c, s}, ...]
     ↓
-[ElevenLabs] Generate audio + timing → Shot list with durations
+[MiniMax audio generation] Generate audio + timing → Shot list with durations
     ↓
 [FFmpeg] Assemble video → Final video with synchronized captions
 ```
@@ -27,7 +27,6 @@ Input (Slides)
 HackEmory/
 ├── main.py                              # Basic FastAPI app
 ├── frontend_pipeline/                   # Quick pipeline (OCR → Script)
-│   ├── ocr/                            # Slide text extraction
 │   ├── script_generation/              # Gemini script generation
 │   └── shared/                         # Shared frontend utilities
 └── backend_pipeline/                    # Slow pipeline (Audio → Video)

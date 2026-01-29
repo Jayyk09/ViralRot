@@ -121,6 +121,44 @@ def get_character_image(speaker, emotion):
         return f"{base_path}/{speaker_lower}_{emotion}.png"
 
 
+def merge_consecutive_educational_images(educational_images):
+    """
+    Merge consecutive appearances of the same image to avoid flickering.
+    
+    If the same image path appears in consecutive or overlapping timing blocks,
+    merge them into one continuous display period.
+    
+    Args:
+        educational_images: List of educational image configs
+        
+    Returns:
+        List of merged educational image configs
+    """
+    if not educational_images:
+        return []
+    
+    # Sort by start time
+    sorted_images = sorted(educational_images, key=lambda x: x["start"])
+    merged = []
+    
+    for img in sorted_images:
+        # Check if we can merge with the last image
+        if merged and merged[-1]["path"] == img["path"]:
+            # Check if timings are consecutive or overlapping
+            # Allow small gap (0.1s) to handle floating point precision
+            if img["start"] <= merged[-1]["end"] + 0.1:
+                # Merge: extend the end time
+                merged[-1]["end"] = max(merged[-1]["end"], img["end"])
+                print(f"  🔗 Merged image: {os.path.basename(img['path'])} "
+                      f"({merged[-1]['start']:.2f}s - {merged[-1]['end']:.2f}s)")
+                continue
+        
+        # Add as new image
+        merged.append(img.copy())
+    
+    return merged
+
+
 def create_video_with_audio_and_captions(
     background_video,
     audio_file,
@@ -243,6 +281,11 @@ def create_video_with_audio_and_captions(
     
     if caption_mode == "karaoke":
         # Generate ASS subtitle file for karaoke-style captions
+        print(f"\n🔍 KARAOKE MODE - Generating ASS file")
+        print(f"  caption_timings count: {len(caption_timings) if caption_timings else 'None'}")
+        # Log first few timings
+        for i, t in enumerate(caption_timings[:3] if caption_timings else []):
+            print(f"  timing[{i}]: caption={t.get('caption', 'MISSING')[:30] if t.get('caption') else 'None'}...")
         ass_file_path = generate_ass_subtitle_file(
             caption_timings=caption_timings,
             output_path=os.path.join(os.path.dirname(output_file), "captions.ass"),
@@ -363,17 +406,21 @@ def create_video_with_audio_and_captions(
             overlay_count += 1
     
     # ============ Educational Images Overlay ============
-    # Scale and overlay educational images with fade effects
+    # Scale and overlay educational images WITHOUT fade effects (instant on/off)
+    # Consecutive appearances of the same image are merged for seamless display
     # Uses IMAGE_SIZES and calculate_image_position() defined at module level
     # Supports: small (300px), medium (540px top, 400px bottom), large (800px)
     # Limits: 1 large OR 2 medium, AND up to 3 small simultaneously
-    # Fade: 0.3s fade in/out
     
     edu_images = educational_images or []
+    
+    # Merge consecutive appearances of the same image
+    if edu_images:
+        print(f"\n🔗 Merging consecutive educational images...")
+        edu_images = merge_consecutive_educational_images(edu_images)
+    
     edu_scaled_streams = []
     edu_input_start_index = input_index  # Track where edu images start in inputs
-    
-    FADE_DURATION = 0.3  # seconds for fade in/out
     
     def get_image_width(size_name: str, position: str) -> int:
         """Get the appropriate width for an image based on size and position."""
@@ -408,7 +455,7 @@ def create_video_with_audio_and_captions(
         })
         input_index += 1
     
-    # Overlay educational images with positioning and fade
+    # Overlay educational images with positioning (NO fade effects)
     for i, edu_stream in enumerate(edu_scaled_streams):
         start = edu_stream["start"]
         end = edu_stream["end"]
@@ -418,24 +465,12 @@ def create_video_with_audio_and_captions(
         # Get position coordinates using the calculator function
         x_pos, y_pos = calculate_image_position(size_name, position)
         
-        # Fade expression: fade in for first 0.3s, fade out for last 0.3s
-        fade_in_end = start + FADE_DURATION
-        fade_out_start = max(end - FADE_DURATION, fade_in_end)
-        
-        # Build enable expression for timing (simpler than alpha)
+        # Build enable expression for timing (instant on/off, no fade)
         enable_expr = f"between(t,{start},{end})"
         
-        # Apply fade filter to the educational image stream before overlaying
-        # This is more reliable than using alpha expressions
-        fade_stream = f"edu_{i}_faded"
+        # Direct overlay without fade filter (instant appearance/disappearance)
         filter_parts.append(
-            f"{edu_stream['stream']}fade=t=in:st={start}:d={FADE_DURATION}:alpha=1,"
-            f"fade=t=out:st={fade_out_start}:d={FADE_DURATION}:alpha=1[{fade_stream}]"
-        )
-        
-        # Overlay with enable expression for timing
-        filter_parts.append(
-            f"{current_stream}[{fade_stream}]"
+            f"{current_stream}{edu_stream['stream']}"
             f"overlay=x={x_pos}:y={y_pos}:enable='{enable_expr}'[tmp_{overlay_count}]"
         )
         current_stream = f"[tmp_{overlay_count}]"
@@ -448,6 +483,7 @@ def create_video_with_audio_and_captions(
         print(f"Total educational images: {len(edu_scaled_streams)}")
         print(f"Limits: 1 large OR 2 medium, AND up to 3 small")
         print(f"Note: Medium at bottom-right uses {MEDIUM_BOTTOM_SIZE}px (reduced to avoid character overlap)")
+        print(f"Note: Images appear/disappear instantly (no fade), consecutive same images are seamless")
         for i, edu_stream in enumerate(edu_scaled_streams):
             size_name = edu_stream['size']
             position = edu_stream.get('position', DEFAULT_POSITIONS.get(size_name, 'top-right'))

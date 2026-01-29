@@ -54,7 +54,7 @@ def _call_minimax_tts(text: str, voice_id: str) -> tuple[bytes, float]:
         "stream": False,
         "voice_setting": {
             "voice_id": voice_id,
-            "speed": 1.0,
+            "speed": 1.3,
             "vol": 1.0,
             "pitch": 0,
         },
@@ -104,19 +104,38 @@ def generate_audio_from_transcript(
 ) -> List[Dict[str, Any]]:
     """
     Generate audio files from transcript JSON data using MiniMax TTS.
-    
+
     Args:
         transcript_data: Dictionary containing 'transcripts' list with caption and speaker
         output_dir: Directory to save audio segments
-    
+
     Returns:
         List of audio segment dictionaries with file paths and metadata
     """
+    print(f"\n{'='*60}")
+    print(f"🔍 GENERATE_AUDIO_FROM_TRANSCRIPT - ENTRY")
+    print(f"{'='*60}")
+    print(f"  transcript_data type: {type(transcript_data)}")
+    print(f"  transcript_data keys: {transcript_data.keys() if transcript_data else 'None'}")
+
+    transcripts = transcript_data.get("transcripts")
+    print(f"  transcripts type: {type(transcripts)}")
+    print(f"  transcripts is None: {transcripts is None}")
+    print(f"  transcripts length: {len(transcripts) if transcripts else 'N/A'}")
+
+    if not transcripts:
+        raise ValueError("No transcripts found in transcript_data")
+
+    # Log first few transcripts
+    for i, seg in enumerate(transcripts[:3]):
+        print(f"  transcripts[{i}]: caption={seg.get('caption', 'MISSING')[:30] if seg.get('caption') else 'None'}...")
+    print(f"{'='*60}\n")
+
     os.makedirs(output_dir, exist_ok=True)
-    
+
     audio_segments = []
-    
-    for idx, segment in enumerate(transcript_data["transcripts"]):
+
+    for idx, segment in enumerate(transcripts):
         caption = segment["caption"]
         speaker = segment["speaker"]
         emotion = segment.get("emotion", "neutral")  # Default to neutral if not provided
@@ -125,7 +144,7 @@ def generate_audio_from_transcript(
         voice_id = VOICE_MAP.get(speaker, VOICE_MAP["PETER"])
         
         print(
-            f"🎙️  Generating audio {idx+1}/{len(transcript_data['transcripts'])}: "
+            f"🎙️  Generating audio {idx+1}/{len(transcripts)}: "
             f"{speaker} ({emotion})"
         )
         

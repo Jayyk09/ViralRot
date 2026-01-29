@@ -27,6 +27,96 @@ def format_ass_time(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}.{centisecs:02d}"
 
 
+def split_caption_into_chunks(caption_text: str, max_words: int = 5) -> List[str]:
+    """
+    Split caption into chunks of max_words each.
+    
+    Args:
+        caption_text: The caption text to split
+        max_words: Maximum words per chunk (default 5)
+        
+    Returns:
+        List of caption chunks (each chunk is a string)
+    """
+    if not caption_text:
+        return []
+    
+    words = caption_text.split()
+    chunks = []
+    
+    for i in range(0, len(words), max_words):
+        chunk = " ".join(words[i:i+max_words])
+        chunks.append(chunk)
+    
+    return chunks
+
+
+def calculate_chunk_timings(
+    caption_text: str,
+    start_time: float,
+    end_time: float,
+    max_words_per_chunk: int = 5
+) -> List[Dict[str, Any]]:
+    """
+    Split caption into chunks and calculate timing for each chunk.
+    
+    Distributes the total caption duration across chunks proportionally
+    based on character count in each chunk.
+    
+    Args:
+        caption_text: The caption text to split
+        start_time: Start time of the caption in seconds
+        end_time: End time of the caption in seconds
+        max_words_per_chunk: Maximum words per chunk (default 5)
+        
+    Returns:
+        List of dicts with 'text', 'start', and 'end' keys
+    """
+    if not caption_text:
+        return []
+    
+    chunks = split_caption_into_chunks(caption_text, max_words_per_chunk)
+    if not chunks:
+        return []
+    
+    total_duration = end_time - start_time
+    
+    # Calculate character count for each chunk
+    chunk_chars = [len(chunk) for chunk in chunks]
+    total_chars = sum(chunk_chars)
+    
+    if total_chars == 0:
+        return []
+    
+    # Distribute duration proportionally
+    chunk_timings = []
+    current_time = start_time
+    
+    for i, chunk in enumerate(chunks):
+        # Calculate duration for this chunk based on character count
+        char_ratio = chunk_chars[i] / total_chars
+        chunk_duration = total_duration * char_ratio
+        
+        # Ensure minimum duration of 0.5s per chunk for readability
+        chunk_duration = max(0.5, chunk_duration)
+        
+        chunk_end = current_time + chunk_duration
+        
+        chunk_timings.append({
+            "text": chunk,
+            "start": current_time,
+            "end": min(chunk_end, end_time),  # Don't exceed original end time
+        })
+        
+        current_time = chunk_end
+    
+    # Adjust last chunk to exactly match end_time
+    if chunk_timings:
+        chunk_timings[-1]["end"] = end_time
+    
+    return chunk_timings
+
+
 def calculate_word_timings(
     caption_text: str,
     start_time: float,
@@ -48,6 +138,10 @@ def calculate_word_timings(
     Returns:
         List of dicts with 'word' and 'duration_cs' (centiseconds) keys
     """
+    if caption_text is None:
+        print(f"⚠️  WARNING: caption_text is None in calculate_word_timings")
+        return []
+
     words = caption_text.split()
     if not words:
         return []
@@ -208,12 +302,16 @@ def generate_ass_subtitle_file(
     font_name: str = "Arial Bold",
     font_size: int = 48,
     timing_method: str = "proportional",
+    max_words_per_chunk: int = 5,
 ) -> str:
     """
     Generate a complete ASS subtitle file with karaoke-style captions.
     
     Creates an ASS file where words highlight in yellow as they're
     spoken, with white text for words not yet spoken.
+    
+    Captions are automatically split into chunks of max_words_per_chunk
+    to keep text concise and readable on screen.
     
     Args:
         caption_timings: List of caption timing dicts with:
@@ -227,6 +325,7 @@ def generate_ass_subtitle_file(
         font_name: Font to use
         font_size: Font size
         timing_method: "even" or "proportional" for word timing distribution
+        max_words_per_chunk: Maximum words to show on screen at once (default 5)
         
     Returns:
         Path to generated ASS file
@@ -249,34 +348,58 @@ def generate_ass_subtitle_file(
     )
     
     # Generate dialogue lines
+    print(f"\n🔍 ASS GENERATOR - Processing {len(caption_timings) if caption_timings else 0} captions")
+    print(f"   Chunking: Max {max_words_per_chunk} words per screen")
     dialogue_lines = []
-    for timing in caption_timings:
-        caption_text = timing.get("caption", "")
+    
+    for i, timing in enumerate(caption_timings or []):
+        caption_text = timing.get("caption") or ""  # Handle None value
         start = timing.get("start", 0)
         end = timing.get("end", 0)
-        
+
+        # Debug log for first few and any problematic entries
+        if i < 3 or caption_text is None:
+            print(f"  [{i}] caption={caption_text[:30] if caption_text else 'None/Empty'}... start={start} end={end}")
+
         if not caption_text or end <= start:
             continue
         
-        # Calculate word timings
-        word_timings = calculate_word_timings(
-            caption_text, start, end, method=timing_method
+        # Split caption into chunks with calculated timings
+        chunk_timings = calculate_chunk_timings(
+            caption_text, start, end, max_words_per_chunk=max_words_per_chunk
         )
         
-        # Create dialogue line
-        line = create_dialogue_line(
-            start_time=start,
-            end_time=end,
-            text=caption_text,
-            word_timings=word_timings,
-        )
-        dialogue_lines.append(line)
+        # Create dialogue line for each chunk
+        for chunk_idx, chunk in enumerate(chunk_timings):
+            chunk_text = chunk["text"]
+            chunk_start = chunk["start"]
+            chunk_end = chunk["end"]
+            
+            # Calculate word timings within this chunk
+            word_timings = calculate_word_timings(
+                chunk_text, chunk_start, chunk_end, method=timing_method
+            )
+            
+            # Create dialogue line
+            line = create_dialogue_line(
+                start_time=chunk_start,
+                end_time=chunk_end,
+                text=chunk_text,
+                word_timings=word_timings,
+            )
+            dialogue_lines.append(line)
+            
+            # Debug log for first few chunks
+            if i < 2:
+                print(f"    Chunk {chunk_idx+1}: '{chunk_text[:40]}...' ({chunk_start:.2f}s - {chunk_end:.2f}s)")
     
     # Write file
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(header)
         for line in dialogue_lines:
             f.write(line + "\n")
+    
+    print(f"✅ Generated ASS file with {len(dialogue_lines)} dialogue chunks")
     
     return output_path
 

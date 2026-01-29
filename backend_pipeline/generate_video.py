@@ -206,11 +206,33 @@ def generate_video_from_dialogue(
     audio_dir = Path(audio_dir)
     image_dir_path = Path(image_dir) if image_dir else None
 
+    print(f"\n{'='*60}")
+    print(f"🔍 GENERATE_VIDEO_FROM_DIALOGUE - ENTRY")
+    print(f"{'='*60}")
+    print(f"  dialogue_data type: {type(dialogue_data)}")
+    print(f"  dialogue_data keys: {dialogue_data.keys() if dialogue_data else 'None'}")
+
     title = dialogue_data.get("title", "Untitled Dialogue")
-    dialogue = dialogue_data.get("dialogue", [])
-    
+    print(f"  title: {title}")
+
+    raw_dialogue = dialogue_data.get("dialogue")
+    print(f"  raw dialogue type: {type(raw_dialogue)}")
+    print(f"  raw dialogue is None: {raw_dialogue is None}")
+
+    dialogue = raw_dialogue or []
+    print(f"  dialogue length: {len(dialogue) if dialogue else 0}")
+
     if not dialogue:
         raise ValueError("No dialogue found in transcript.")
+
+    # Log first few dialogue lines
+    for i, line in enumerate(dialogue[:3]):
+        print(f"  dialogue[{i}] keys: {line.keys() if isinstance(line, dict) else type(line)}")
+        if isinstance(line, dict):
+            print(f"    caption: {line.get('caption', 'MISSING')[:50] if line.get('caption') else 'None'}...")
+            print(f"    speaker: {line.get('speaker', 'MISSING')}")
+            print(f"    images: {line.get('images', 'None')}")
+    print(f"{'='*60}\n")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     audio_dir.mkdir(parents=True, exist_ok=True)

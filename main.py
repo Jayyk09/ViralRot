@@ -544,6 +544,7 @@ async def _process_transcript_job(
         ProgressService.update_job(
             job_id=job_id,
             status="completed",
+            # this 24 hours needs to be updated for better synchronization
             result={
                 "transcript_id": transcript_id,
                 "expires_in_hours": 24,
@@ -749,16 +750,19 @@ async def _process_video_job(
         print(f"  image_dir: {image_dir}")
         print(f"  karaoke_captions: {karaoke_captions}")
         print(f"  dialogue_data keys: {dialogue_data.keys() if dialogue_data else 'None'}")
-        if dialogue_data and 'dialogue' in dialogue_data:
-            print(f"  dialogue lines: {len(dialogue_data['dialogue'])}")
+        dialogue_lines = dialogue_data.get('dialogue') if dialogue_data else None
+        if dialogue_lines:
+            print(f"  dialogue lines: {len(dialogue_lines)}")
             # Check for image references in dialogue (both single and array format)
-            single_img_count = sum(1 for line in dialogue_data['dialogue'] if line.get('image'))
-            array_img_count = sum(1 for line in dialogue_data['dialogue'] if line.get('images'))
+            single_img_count = sum(1 for line in dialogue_lines if line.get('image'))
+            array_img_count = sum(1 for line in dialogue_lines if line.get('images'))
             print(f"  lines with 'image': {single_img_count}")
             print(f"  lines with 'images' array: {array_img_count}")
             # Count total images in arrays
-            total_array_images = sum(len(line.get('images', [])) for line in dialogue_data['dialogue'])
+            total_array_images = sum(len(line.get('images') or []) for line in dialogue_lines)
             print(f"  total images in arrays: {total_array_images}")
+        else:
+            print(f"  dialogue lines: None or empty")
         print(f"{'='*50}\n")
         
         video_result = await _run_blocking(
@@ -792,14 +796,23 @@ async def _process_video_job(
                 "storage_key": video_result["storage_key"],
             },
         )
-    
+
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"\n{'='*60}")
+        print(f"❌ VIDEO GENERATION ERROR")
+        print(f"{'='*60}")
+        print(f"  Error type: {type(e).__name__}")
+        print(f"  Error message: {str(e)}")
+        print(f"  Full traceback:\n{error_trace}")
+        print(f"{'='*60}\n")
         ProgressService.update_job(
             job_id=job_id,
             status="failed",
             error=f"{type(e).__name__}: {str(e)}",
         )
-    
+
     finally:
         # Cleanup image dir
         if image_dir:
@@ -901,24 +914,34 @@ def _save_uploaded_images(images: List[UploadFile], session_id: str) -> Path:
 def _validate_image_references(transcript_data: dict, image_dir: Path):
     """
     Validate that all image filenames in transcript exist in image_dir.
-    
+
     Supports both:
     - New single dialogue format: { dialogue: { title, dialogue[] } } or { dialogue_data: { ... } }
     - Legacy multi-subtopic format: { subtopic_transcripts: [...] }
-    
+
     Raises HTTPException if any referenced image not found.
     """
     referenced_images = set()
-    
+
     # Support new single dialogue format (check both 'dialogue' and 'dialogue_data' keys)
     dialogue_data = transcript_data.get("dialogue") or transcript_data.get("dialogue_data")
     if dialogue_data and "dialogue" in dialogue_data:
-        print(f"🔍 Checking for image references in {len(dialogue_data['dialogue'])} dialogue lines...")
-        for i, line in enumerate(dialogue_data["dialogue"]):
+        dialogue_lines = dialogue_data.get("dialogue") or []
+        print(f"🔍 Checking for image references in {len(dialogue_lines)} dialogue lines...")
+        for i, line in enumerate(dialogue_lines):
+            # Check single image (legacy format)
             if line.get("image"):
-                filename = line["image"]["filename"]
-                referenced_images.add(filename)
-                print(f"  📷 Found image reference at line {i}: {filename}")
+                filename = line["image"].get("filename")
+                if filename:
+                    referenced_images.add(filename)
+                    print(f"  📷 Found image reference at line {i}: {filename}")
+            # Check images array (new multi-image format)
+            if line.get("images") and isinstance(line["images"], list):
+                for img in line["images"]:
+                    filename = img.get("filename") if isinstance(img, dict) else None
+                    if filename:
+                        referenced_images.add(filename)
+                        print(f"  📷 Found image reference at line {i}: {filename}")
     
     # Legacy: support old multi-subtopic format for backward compatibility
     for subtopic in transcript_data.get("subtopic_transcripts", []):

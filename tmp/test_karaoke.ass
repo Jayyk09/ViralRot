@@ -1,0 +1,18 @@
+[Script Info]
+Title: Educational Video Captions
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Karaoke,Arial Bold,48,&H00FFFFFF,&H0000FFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,1,5,50,50,50,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:03.50,Karaoke,,0,0,0,,{\kf25}Hey {\kf59}Stewie, {\kf25}you {\kf34}ever {\kf51}wonder {\kf25}how {\kf51}plants {\kf34}make {\kf42}food?
+Dialogue: 0,0:00:03.70,0:00:07.00,Karaoke,,0,0,0,,{\kf34}It's {\kf52}called {\kf130}photosynthesis, {\kf26}you {\kf86}simpleton.
+Dialogue: 0,0:00:07.20,0:00:12.00,Karaoke,,0,0,0,,{\kf50}Plants {\kf25}use {\kf67}sunlight {\kf16}to {\kf58}convert {\kf42}water {\kf25}and {\kf50}carbon {\kf58}dioxide {\kf33}into {\kf50}sugar!

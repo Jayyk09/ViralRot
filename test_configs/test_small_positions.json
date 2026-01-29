@@ -1,0 +1,61 @@
+{
+  "audio_file": "assets/audio/generated/session_f7eae00bafef497788d9d0a386968f04/The_Rule_of_72_full.mp3",
+  "background_video": "assets/videos/minecraft.mp4",
+  "output_file": "tmp/test_videos/test_small_positions.mp4",
+  "dialogue": [
+    {
+      "caption": "Let me show you small images in different positions!",
+      "speaker": "PETER",
+      "emotion": "excited",
+      "image": {
+        "filename": "test_diagram.png",
+        "size": "small",
+        "position": "top-left",
+        "start_time": 0,
+        "duration": 6.0
+      }
+    },
+    {
+      "caption": "This one appears in the top-right corner.",
+      "speaker": "STEWIE",
+      "emotion": "neutral",
+      "image": {
+        "filename": "test_diagram.png",
+        "size": "small",
+        "position": "top-right",
+        "start_time": 0,
+        "duration": 6.0
+      }
+    },
+    {
+      "caption": "And this small image is next to me at bottom-right!",
+      "speaker": "PETER",
+      "emotion": "neutral",
+      "image": {
+        "filename": "test_diagram.png",
+        "size": "small",
+        "position": "bottom-right",
+        "start_time": 0,
+        "duration": 6.0
+      }
+    },
+    {
+      "caption": "Pretty cool positioning system, right?",
+      "speaker": "STEWIE",
+      "emotion": "excited"
+    },
+    {
+      "caption": "Now you can place images exactly where you want them!",
+      "speaker": "PETER",
+      "emotion": "neutral"
+    },
+    {
+      "caption": "This gives us so much more flexibility for educational content.",
+      "speaker": "STEWIE",
+      "emotion": "neutral"
+    }
+  ],
+  "images": {
+    "test_diagram.png": "tmp/test_images/test_diagram.png"
+  }
+}

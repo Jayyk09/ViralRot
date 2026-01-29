@@ -37,7 +37,7 @@ def get_all_videos() -> List[Dict[str, Any]]:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, user_id, storage_key, title, description, collection_id, created_at
+                SELECT id, user_id, s3_key, video_title, video_description, collection_id, created_at
                 FROM videos
                 ORDER BY created_at DESC
             """)
@@ -46,9 +46,9 @@ def get_all_videos() -> List[Dict[str, Any]]:
                 {
                     "id": row[0],
                     "user_id": row[1],
-                    "storage_key": row[2],
-                    "title": row[3],
-                    "description": row[4],
+                    "storage_key": row[2],  # s3_key mapped to storage_key for consistency
+                    "title": row[3],  # video_title mapped to title
+                    "description": row[4],  # video_description mapped to description
                     "collection_id": row[5],
                     "created_at": row[6].isoformat() if row[6] else None,
                 }
