@@ -8,7 +8,7 @@ __pycache__/
 *.pyo
 venv/
 .venv/
-.env
+*/.env
 .pytest_cache/
 
 # Node
@@ -23,9 +23,11 @@ test_configs/
 # Backend generated assets (videos, audio, output)
 backend/assets/audio/generated/
 backend/assets/output/
+backend/assets/videos/
 backend/assets/sample.json
 backend/assets/test/
 backend/storage/videos/
+backend/venv/
 
 # Large media files
 *.mp4
