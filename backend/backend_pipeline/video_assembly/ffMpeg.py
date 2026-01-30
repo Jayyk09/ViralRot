@@ -262,7 +262,7 @@ def create_video_with_audio_and_captions(
     def create_enable_expr(timings):
         if not timings:
             return "0"  # Never show
-        conditions = [f"between(t,{t['start']},{t['end']})" for t in timings]
+        conditions = [f"between(t,{round(t['start'], 3)},{round(t['end'], 3)})" for t in timings]
         return "+".join(conditions)
     
     # Create enable expressions for each character-emotion combination
@@ -327,7 +327,7 @@ def create_video_with_audio_and_captions(
                 f"x=(w-tw)/2:" 
                 f"y=(h-th)/2:" 
                 f"text_align=C:"
-                f"enable='between(t,{timing['start']},{timing['end']})':"
+                f"enable='between(t,{round(timing['start'], 3)},{round(timing['end'], 3)})':"
                 f"line_spacing=18"
             )
             caption_filters.append(caption_filter)
@@ -469,7 +469,7 @@ def create_video_with_audio_and_captions(
         x_pos, y_pos = calculate_image_position(size_name, position)
         
         # Build enable expression for timing (instant on/off, no fade)
-        enable_expr = f"between(t,{start},{end})"
+        enable_expr = f"between(t,{round(start, 3)},{round(end, 3)})"
         
         # Direct overlay without fade filter (instant appearance/disappearance)
         filter_parts.append(
@@ -575,8 +575,9 @@ def create_video_with_audio_and_captions(
         # Set duration to match audio
         "-t", str(audio_duration),
         # Output settings
+        "-r", "30",
         "-c:v", "libx264",
-        "-preset", "medium",
+        "-preset", "fast",
         "-crf", "23",
         "-c:a", "aac",
         "-b:a", "192k",
