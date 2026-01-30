@@ -94,7 +94,7 @@ def _call_minimax_tts(text: str, voice_id: str) -> tuple[bytes, float]:
     # Get duration from extra_info
     extra_info = result.get("extra_info", {})
     duration_ms = extra_info.get("audio_length", 0)
-    duration_sec = duration_ms / 1000.0
+    duration_sec = round(duration_ms / 1000.0, 3)
     
     return audio_bytes, duration_sec
 
