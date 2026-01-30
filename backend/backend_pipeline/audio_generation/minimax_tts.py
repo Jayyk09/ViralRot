@@ -234,26 +234,39 @@ def concatenate_audio_segments(
     # Calculate timings based on durations from MiniMax API
     timings = []
     current_time = 0.0
-    
+
     for segment in audio_segments:
         duration = segment.get("duration", 0.0)
-        
+
         if duration == 0.0:
-            print(f"⚠️  Warning: No duration info for segment {segment['index']}")
-            continue
-        
+            # Probe the actual audio file to get the real duration
+            print(f"⚠️  Warning: No duration info for segment {segment['index']}, probing audio file...")
+            probe_cmd = [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                segment["file"],
+            ]
+            probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+            if probe_result.returncode == 0 and probe_result.stdout.strip():
+                duration = round(float(probe_result.stdout.strip()), 3)
+                print(f"   ✅ Probed duration: {duration:.3f}s")
+            else:
+                print(f"   ❌ Could not probe duration, using fallback of 1.0s")
+                duration = 1.0
+
         timings.append(
             {
                 "index": segment["index"],
-                "start": current_time,
-                "end": current_time + duration,
-                "duration": duration,
+                "start": round(current_time, 3),
+                "end": round(current_time + duration, 3),
+                "duration": round(duration, 3),
                 "caption": segment["caption"],
                 "speaker": segment["speaker"],
                 "emotion": segment.get("emotion", "neutral"),
             }
         )
-        
+
         current_time += duration
     
     print(f"✅ Full audio saved: {output_file} (Total duration: {current_time:.2f}s)")
