@@ -338,7 +338,10 @@ def create_video_with_audio_and_captions(
     # Build filter_complex chain
     # Start with background video scaling
     filter_parts = [
-        f"[0:v]scale={video_size[0]}:{video_size[1]}:force_original_aspect_ratio=decrease,"
+        # setpts=N/FR/TB generates smooth monotonic timestamps for the looped
+        # background video, preventing frame stalls at the loop seam
+        f"[0:v]setpts=N/30/TB,"
+        f"scale={video_size[0]}:{video_size[1]}:force_original_aspect_ratio=decrease,"
         f"pad={video_size[0]}:{video_size[1]}:(ow-iw)/2:(oh-ih)/2[bg]"
     ]
     
@@ -526,6 +529,9 @@ def create_video_with_audio_and_captions(
     cmd = [
         "ffmpeg", "-y",
         # Input: Loop background video
+        # -fflags +genpts regenerates timestamps across the loop seam
+        # to prevent frame stalls when the background video restarts
+        "-fflags", "+genpts",
         "-stream_loop", "-1",
         "-i", background_video,
         # Input: Audio
