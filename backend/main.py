@@ -1,6 +1,5 @@
 import asyncio
 import json
-import random
 import re
 import shutil
 import threading
@@ -13,10 +12,10 @@ from uuid import uuid4
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
 from typing import Literal
 
-from services.video_service import VideoService, get_user_videos, get_collection_videos
+from services.video_service import get_collection_videos
 from services.collection_service import get_collection, get_user_collections, find_last_collection
 from services.progress_service import ProgressService, set_event_loop
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import (
@@ -24,17 +23,16 @@ from backend_pipeline.generate_video import (
 )
 import services.account_service as account_service
 
-BACKGROUND_VIDEOS_DIR = Path("assets/videos")
-OUTPUT_DIR = Path("assets/output")
-TEMP_UPLOAD_DIR = Path("tmp/uploads")
-TEMP_IMAGES_DIR = Path("tmp/uploads/images")
-GENERATED_AUDIO_DIR = Path("assets/audio/generated")
+DIRS = {
+    "background_videos": Path("assets/videos"),
+    "output": Path("assets/output"),
+    "temp_upload": Path("tmp/uploads"),
+    "temp_images": Path("tmp/uploads/images"),
+    "generated_audio": Path("assets/audio/generated"),
+}
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-TEMP_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-TEMP_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-GENERATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-
+for dir in DIRS.values():
+    dir.mkdir(parents=True, exist_ok=True)
 
 # ============ In-Memory Transcript Storage ============
 # Structure: {transcript_id: {data, created_at, user_id}}
@@ -128,12 +126,6 @@ class VideoGenerationRequest(BaseModel):
     karaoke_captions: bool = True  # Default ON: word-by-word yellow highlighting
 
 
-# DEPRECATED: Kept for backward compatibility
-class SubtopicPayload(BaseModel):
-    """DEPRECATED: Use DialoguePayload instead."""
-    subtopic_title: str
-    dialogue: List[DialogueLine]
-
 
 class SubtopicRequest(BaseModel):
     """DEPRECATED: Use VideoGenerationRequest instead."""
@@ -185,7 +177,7 @@ async def root():
         "message": "Video Generation API",
         "status": "running",
         "pipeline": {
-            "frontend": ["OCR", "Script Generation"],
+            "frontend": ["Script Generation"],
             "backend": ["Audio Generation", "Video Assembly"]
         }
     }
@@ -278,7 +270,7 @@ async def get_image_positions():
 # ============ WebSocket Progress Endpoint ============
 
 def get_current_user_id() -> int:
-    """Get current user ID. TODO: Replace with real auth."""
+    """Get current user ID. OpenSource local env: no need for dev"""
     return 1
 
 
@@ -422,7 +414,7 @@ async def create_transcript_job(
         job_id: Use with /ws/progress/{job_id} for real-time updates
     """
     # Validate source type
-    valid_types = {"youtube", "audio", "text", "pptx"}
+    valid_types = {"youtube", "text"}
     if source_type.lower() not in valid_types:
         raise HTTPException(
             status_code=400,
@@ -435,15 +427,7 @@ async def create_transcript_job(
     transcript_type = None
     
     try:
-        if source_type == "audio":
-            if not file:
-                raise HTTPException(status_code=400, detail="Audio file required for source_type='audio'")
-            suffix = Path(file.filename or "").suffix or ".mp3"
-            temp_file_path = TEMP_UPLOAD_DIR / f"{uuid4().hex}{suffix}"
-            _move_upload_to_disk(file, temp_file_path)
-            transcript_source = str(temp_file_path)
-            transcript_type = "audio/mp3"
-        elif source_type == "text":
+        if source_type == "text":
             if not content:
                 raise HTTPException(status_code=400, detail="Content required for source_type='text'")
             transcript_source = content
@@ -453,13 +437,8 @@ async def create_transcript_job(
                 raise HTTPException(status_code=400, detail="YouTube URL required for source_type='youtube'")
             transcript_source = content
             transcript_type = "youtube"
-        elif source_type == "pptx":
-            if not file:
-                raise HTTPException(status_code=400, detail="PPTX file required for source_type='pptx'")
-            temp_file_path = TEMP_UPLOAD_DIR / f"{uuid4().hex}.pptx"
-            _move_upload_to_disk(file, temp_file_path)
-            transcript_source = str(temp_file_path)
-            transcript_type = "pptx"
+        else:
+            return
         
         # Create job immediately
         job_id = ProgressService.create_transcript_job(user_id=user_id)
@@ -732,8 +711,8 @@ async def _process_video_job(
         
         # Generate single video with progress callback
         session_id_full = uuid4().hex
-        video_output_dir = OUTPUT_DIR / f"job_{session_id_full}"
-        audio_output_dir = GENERATED_AUDIO_DIR / f"job_{session_id_full}"
+        video_output_dir = DIRS["output"] / f"job_{session_id_full}"
+        audio_output_dir = DIRS["generated_audio"] / f"job_{session_id_full}"
         
         # Progress callback wrapper for single video
         def progress_callback(job_id, current_stage, title):
@@ -768,7 +747,7 @@ async def _process_video_job(
         video_result = await _run_blocking(
             generate_video_from_dialogue,
             dialogue_data,
-            str(BACKGROUND_VIDEOS_DIR),
+            DIRS["background_videos"],
             str(video_output_dir),
             str(audio_output_dir),
             user_id,
@@ -825,17 +804,17 @@ async def _process_video_job(
 
 def _validate_background_video():
     """Validate that the background videos directory exists and has videos."""
-    if not BACKGROUND_VIDEOS_DIR.exists():
+    if not DIRS["background_videos"].exists():
         raise HTTPException(
             status_code=500,
-            detail=f"Background videos directory not found at {BACKGROUND_VIDEOS_DIR}",
+            detail=f"Background videos directory not found at {DIRS['background_videos']}",
         )
     
-    video_files = list(BACKGROUND_VIDEOS_DIR.glob("*.mp4"))
+    video_files = list(DIRS["background_videos"].glob("*.mp4"))
     if not video_files:
         raise HTTPException(
             status_code=500,
-            detail=f"No background videos found in {BACKGROUND_VIDEOS_DIR}",
+            detail=f"No background videos found in {DIRS["background_videos"]}",
         )
 
 
@@ -900,7 +879,7 @@ def _save_uploaded_images(images: List[UploadFile], session_id: str) -> Path:
     Returns:
         Path to session's image directory
     """
-    session_dir = TEMP_IMAGES_DIR / session_id
+    session_dir = DIRS["temp_images"] / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
     
     for image in images:
