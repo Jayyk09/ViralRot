@@ -41,7 +41,7 @@ export function TranscriptEditor({
 }: TranscriptEditorProps) {
   const [karaokeMode, setKaraokeMode] = useState(initialKaraokeMode)
 
-  const editor = useImageEditor(transcript.transcript_id, {
+  const editor = useImageEditor({
     dialogue: transcript.dialogue,
   })
 

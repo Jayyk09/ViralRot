@@ -146,8 +146,6 @@ interface UseTranscriptGenerationReturn {
   transcript: TranscriptResult | null
   /** The single dialogue data (convenience accessor) */
   dialogue: SingleDialogue | null
-  /** Transcript ID for video generation */
-  transcriptId: string | null
   /** Reset state for new generation */
   reset: () => void
 }
@@ -204,7 +202,6 @@ export function useTranscriptGeneration(userId: number = 1): UseTranscriptGenera
     isComplete,
     transcript,
     dialogue,
-    transcriptId: transcript?.transcript_id ?? null,
     reset,
   }
 }
@@ -396,18 +393,22 @@ export function useFullVideoWorkflow(
 
   const startVideo = useCallback(
     async (options?: { images?: File[]; updatedTranscript?: string }) => {
-      if (!transcriptGen.transcriptId) {
+      const dialogueData = options?.updatedTranscript
+        || (transcriptGen.transcript?.dialogue
+          ? JSON.stringify({ dialogue_data: transcriptGen.transcript.dialogue })
+          : null)
+
+      if (!dialogueData) {
         throw new Error('No transcript available. Generate transcript first.')
       }
 
       setStep('video')
       await videoGen.generate({
-        transcript_id: transcriptGen.transcriptId,
+        transcript: dialogueData,
         images: options?.images,
-        updated_transcript: options?.updatedTranscript,
       })
     },
-    [transcriptGen.transcriptId, videoGen]
+    [transcriptGen.transcript, videoGen]
   )
 
   const skipToVideo = useCallback(async () => {

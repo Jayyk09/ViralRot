@@ -34,7 +34,7 @@ export function ImageEditor({
   const [karaokeMode, setKaraokeMode] = useState(initialKaraokeMode)
   const [selectedLineIdx, setSelectedLineIdx] = useState<number | null>(null)
 
-  const editor = useImageEditorMulti(transcript.transcript_id, {
+  const editor = useImageEditorMulti({
     dialogue: transcript.dialogue,
   })
 

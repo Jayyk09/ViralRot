@@ -404,19 +404,13 @@ export function validateFilenameMatching(
  * Comprehensive pre-upload validation (supports both image and images)
  */
 export function validateBeforeUpload(
-  transcriptId: string,
   transcript: { dialogue?: SingleDialogue },
   imageFiles: Map<string, File>
 ): ValidationResult {
   const errors: string[] = []
   const warnings: string[] = []
 
-  // 1. Check transcript_id
-  if (!transcriptId || transcriptId.trim() === '') {
-    errors.push('Missing transcript_id')
-  }
-
-  // 2. Check transcript structure
+  // 1. Check transcript structure
   if (!transcript.dialogue) {
     errors.push('Transcript has no dialogue')
   } else {

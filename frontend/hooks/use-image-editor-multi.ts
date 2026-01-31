@@ -74,14 +74,12 @@ interface UseImageEditorMultiReturn {
  * Uses the `images` array format instead of single `image` field.
  */
 export function useImageEditorMulti(
-  transcriptId: string,
   initialTranscript: { dialogue: SingleDialogue },
   options: UseImageEditorMultiOptions = {}
 ): UseImageEditorMultiReturn {
   const { autoRenameDuplicates = true, validateOnChange = true } = options
 
   const [state, setState] = useState<ImageEditorState>(() => ({
-    transcriptId,
     transcript: deepClone(initialTranscript),
     imageFiles: new Map(),
     imagePreviewUrls: new Map(),
@@ -106,7 +104,6 @@ export function useImageEditorMulti(
   useEffect(() => {
     if (validateOnChange) {
       const result = validateBeforeUpload(
-        state.transcriptId,
         state.transcript,
         state.imageFiles
       )
@@ -378,17 +375,15 @@ export function useImageEditorMulti(
       })
 
       return {
-        transcriptId,
         transcript: deepClone(initialTranscript),
         imageFiles: new Map(),
         imagePreviewUrls: new Map(),
       }
     })
-  }, [transcriptId, initialTranscript])
+  }, [initialTranscript])
 
   const validate = useCallback((): ValidationResult => {
     const result = validateBeforeUpload(
-      state.transcriptId,
       state.transcript,
       state.imageFiles
     )

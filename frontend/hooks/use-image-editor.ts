@@ -72,14 +72,12 @@ interface UseImageEditorReturn {
  * Updated for single dialogue format (no longer multi-subtopic).
  */
 export function useImageEditor(
-  transcriptId: string,
   initialTranscript: { dialogue: SingleDialogue },
   options: UseImageEditorOptions = {}
 ): UseImageEditorReturn {
   const { autoRenameDuplicates = true, validateOnChange = true } = options
 
   const [state, setState] = useState<ImageEditorState>(() => ({
-    transcriptId,
     transcript: deepClone(initialTranscript),
     imageFiles: new Map(),
     imagePreviewUrls: new Map(),
@@ -104,7 +102,6 @@ export function useImageEditor(
   useEffect(() => {
     if (validateOnChange) {
       const result = validateBeforeUpload(
-        state.transcriptId,
         state.transcript,
         state.imageFiles
       )
@@ -342,17 +339,15 @@ export function useImageEditor(
       })
 
       return {
-        transcriptId,
         transcript: deepClone(initialTranscript),
         imageFiles: new Map(),
         imagePreviewUrls: new Map(),
       }
     })
-  }, [transcriptId, initialTranscript])
+  }, [initialTranscript])
 
   const validate = useCallback((): ValidationResult => {
     const result = validateBeforeUpload(
-      state.transcriptId,
       state.transcript,
       state.imageFiles
     )
