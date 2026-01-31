@@ -19,7 +19,6 @@ from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import (
     generate_video_from_dialogue,
 )
-import services.account_service as account_service
 
 DIRS = {
     "background_videos": Path("assets/videos"),
@@ -328,19 +327,22 @@ async def create_transcript_job(
 ):
     """
     Generate transcript from source material (ASYNC with progress tracking).
-    
+
     Returns job_id immediately. Connect to WebSocket for real-time progress.
-    
+
     Workflow:
     1. POST to this endpoint with source material
     2. Connect to WebSocket: /ws/progress/{job_id}
-    3. Receive progress updates (extracting_content → generating_dialogue)
-    4. Get final result with transcript JSON
-    
+    3. Receive progress updates (extracting_content -> generating_dialogue)
+    4. On completion, result contains dialogue data as JSON
+
     Stages:
     - extracting_content: Parse source (YouTube/audio/PPTX)
     - generating_dialogue: Create dialogue with Gemini AI
-    
+
+    Result format on completion:
+        { "dialogue_data": { "title": "...", "dialogue": [...] } }
+
     Returns:
         job_id: Use with /ws/progress/{job_id} for real-time updates
     """
@@ -445,13 +447,12 @@ async def _process_transcript_job(
         transcript_data = {
             "dialogue_data": dialogue.model_dump()
         }
-        _add_metadata_to_transcript(transcript_data)
         
         
         # Complete job with result
         ProgressService.update_job(
             job_id=job_id,
-            status="completed"
+            status="completed",
             result=transcript_data
         )
     
@@ -479,27 +480,30 @@ async def create_video_job(
     karaoke_captions: bool = Form(True, description="Use karaoke-style captions (word-by-word yellow highlighting). Default: ON"),
 ):
     """
-    Generate videos from transcript (ASYNC with progress tracking).
-    
+    Generate video from transcript JSON (ASYNC with progress tracking).
+
     Returns job_id immediately. Connect to WebSocket for real-time progress.
-    
+
     Workflow:
-    1. transcript and add image references
-    2. POST to this endpoint with transcript_id, optional images, and updated transcript
-    3. Connect to WebSocket: /ws/progress/{job_id}
-    4. Receive progress updates for video generation
-    5. Get final result with collection_id and video URL
-    
+    1. POST to this endpoint with transcript JSON and optional images
+    2. Connect to WebSocket: /ws/progress/{job_id}
+    3. Receive progress updates for video generation
+    4. Get final result with collection_id and video URL
+
+    Args:
+        transcript: JSON string with dialogue data (required).
+                    Format: { "dialogue_data": { "title": "...", "dialogue": [...] } }
+
     Caption Modes:
     - karaoke_captions=true (default): Words highlight yellow one-by-one as spoken
     - karaoke_captions=false: Traditional white text in black boxes
-    
+
     Stages:
     - preparing_assets: Process uploaded images
     - audio_generation: Create TTS audio with MiniMax
     - video_assembly: FFmpeg overlay with captions
     - uploading: Upload to S3
-    
+
     Returns:
         job_id: Use with /ws/progress/{job_id} for real-time updates
     """
@@ -1008,53 +1012,3 @@ async def get_collection_details(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============ Account CRUD Endpoints ============
-
-class UserCreate(BaseModel):
-    email: str
-    password: str
-
-
-class UserLogin(BaseModel):
-    email: str
-    password: str
-
-
-class UserUpdatePassword(BaseModel):
-    new_password: str
-
-
-@app.post("/accounts")
-async def register_account(user: UserCreate):
-    """Create a new user account."""
-    result = await _run_blocking(account_service.create_user, user.email, user.password)
-    if result is None:
-        raise HTTPException(status_code=400, detail="Email already exists")
-    return {"message": "Account created", "user": result}
-
-
-@app.post("/accounts/login")
-async def login_account(credentials: UserLogin):
-    """Authenticate user and return user info."""
-    result = await _run_blocking(account_service.authenticate_user, credentials.email, credentials.password)
-    if result is None:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return {"message": "Login successful", "user": result}
-
-
-@app.get("/accounts/{user_id}")
-async def get_account(user_id: int):
-    """Get user account by ID."""
-    result = await _run_blocking(account_service.get_user_by_id, user_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return result
-
-
-@app.get("/accounts")
-async def list_accounts():
-    """List all user accounts."""
-    users = await _run_blocking(account_service.list_all_users)
-    return {"count": len(users), "users": users}
