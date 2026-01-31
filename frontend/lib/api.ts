@@ -5,7 +5,6 @@ import {
   VideoRequest,
   JobCreatedResponse,
   ProgressUpdate,
-  AuthResponse,
   VideoApiError,
 } from './types'
 
@@ -111,23 +110,19 @@ export async function generateTranscript(request: TranscriptRequest): Promise<Jo
  */
 export async function generateVideo(request: VideoRequest): Promise<JobCreatedResponse> {
   const formData = new FormData()
-  formData.append('transcript_id', request.transcript_id)
+  formData.append('transcript', request.transcript)
   formData.append('user_id', String(request.user_id))
-  
+
   // Karaoke captions - default is true (karaoke ON)
   // Only append if explicitly set to false to disable karaoke
   if (request.karaoke_captions !== undefined) {
     formData.append('karaoke_captions', String(request.karaoke_captions))
   }
-  
+
   if (request.images && request.images.length > 0) {
     request.images.forEach(image => {
       formData.append('images', image)
     })
-  }
-  
-  if (request.updated_transcript) {
-    formData.append('updated_transcript', request.updated_transcript)
   }
   
   const response = await fetchWithRetry(
@@ -257,42 +252,6 @@ export async function fetchCollectionDetails(collectionId: number): Promise<Coll
   }
 
   return response.json()
-}
-
-// ============ Auth Endpoints ============
-
-/**
- * Register new user account.
- */
-export async function createAccount(email: string, password: string): Promise<AuthResponse> {
-  const response = await fetch(
-    `${API_BASE_URL}/accounts`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-      credentials: 'include',
-    }
-  )
-  
-  return handleResponse<AuthResponse>(response)
-}
-
-/**
- * Authenticate user.
- */
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  const response = await fetch(
-    `${API_BASE_URL}/accounts/login`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-      credentials: 'include',
-    }
-  )
-  
-  return handleResponse<AuthResponse>(response)
 }
 
 // ============ Utility Functions ============

@@ -20,21 +20,10 @@ export interface TranscriptRequest {
 }
 
 export interface VideoRequest {
-  transcript_id: string
+  transcript: string            // JSON string of dialogue data (required)
   user_id: number
   images?: File[]
-  updated_transcript?: string  // JSON string of modified transcript
   karaoke_captions?: boolean   // Default: true (karaoke mode ON)
-}
-
-export interface UserCreate {
-  email: string
-  password: string
-}
-
-export interface UserLogin {
-  email: string
-  password: string
 }
 
 // ============ Job Response Types ============
@@ -91,9 +80,7 @@ export interface SingleDialogue {
 }
 
 export interface TranscriptResult {
-  transcript_id: string
-  expires_in_hours: number
-  dialogue: SingleDialogue  // Backend returns "dialogue" not "dialogue_data"
+  dialogue: SingleDialogue
 }
 
 // ============ Video Result Types ============
@@ -127,7 +114,7 @@ export interface ProgressUpdate {
 
 // Type guards for results
 export function isTranscriptResult(result: TranscriptResult | VideoResult | undefined): result is TranscriptResult {
-  return result !== undefined && 'transcript_id' in result
+  return result !== undefined && 'dialogue' in result && !('video_id' in result)
 }
 
 export function isVideoResult(result: TranscriptResult | VideoResult | undefined): result is VideoResult {
@@ -153,18 +140,8 @@ export interface Video {
   created_at: string
 }
 
-// ============ Auth Response Types ============
-export interface AuthResponse {
-  message: string
-  user: {
-    id: number
-    email: string
-  }
-}
-
 // ============ Image Editor Types ============
 export interface ImageEditorState {
-  transcriptId: string
   transcript: { dialogue: SingleDialogue }  // Matches API response format
   imageFiles: Map<string, File>
   imagePreviewUrls: Map<string, string>
@@ -200,55 +177,3 @@ export class VideoApiError extends Error {
   }
 }
 
-// ============ DEPRECATED: Legacy Types for Backward Compatibility ============
-// These types are kept for viewing old videos but should not be used for new features
-
-/**
- * @deprecated Use SingleDialogue instead
- * Legacy multi-subtopic format
- */
-export interface SubtopicTranscript {
-  subtopic_title: string
-  dialogue: DialogueLine[]
-}
-
-/**
- * @deprecated Use TranscriptResult instead
- * Legacy transcript result with multiple subtopics
- */
-export interface LegacyTranscriptResult {
-  transcript_id: string
-  expires_in_hours: number
-  subtopic_count: number
-  subtopic_transcripts: SubtopicTranscript[]
-}
-
-/**
- * @deprecated Use VideoResult instead
- * Legacy video result with multiple videos
- */
-export interface LegacyVideoInfo {
-  subtopic_title: string
-  video_path: string
-  video_id: number
-}
-
-/**
- * @deprecated Use VideoResult instead
- */
-export interface LegacyVideoResult {
-  collection_id: number
-  video_count: number
-  results: LegacyVideoInfo[]
-}
-
-/**
- * @deprecated Use ImageEditorState instead
- * Legacy state format for multi-subtopic editing
- */
-export interface LegacyImageEditorState {
-  transcriptId: string
-  transcript: { subtopic_transcripts: SubtopicTranscript[] }
-  imageFiles: Map<string, File>
-  imagePreviewUrls: Map<string, string>
-}
