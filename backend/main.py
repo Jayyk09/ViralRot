@@ -34,63 +34,6 @@ DIRS = {
 for dir in DIRS.values():
     dir.mkdir(parents=True, exist_ok=True)
 
-# ============ In-Memory Transcript Storage ============
-# Structure: {transcript_id: {data, created_at, user_id}}
-TRANSCRIPT_STORAGE: Dict[str, dict] = {}
-TRANSCRIPT_LOCK = threading.Lock()
-TRANSCRIPT_TTL = timedelta(hours=24)  # Expire after 24 hours
-
-
-def save_transcript_memory(user_id: int, transcript_data: dict, source_type: str) -> str:
-    """Save transcript to memory with expiration."""
-    transcript_id = uuid4().hex
-    
-    with TRANSCRIPT_LOCK:
-        TRANSCRIPT_STORAGE[transcript_id] = {
-            "data": transcript_data,
-            "user_id": user_id,
-            "source_type": source_type,
-            "created_at": datetime.now(),
-        }
-    
-    return transcript_id
-
-
-def get_transcript_memory(transcript_id: str, user_id: Optional[int] = None) -> Optional[dict]:
-    """Retrieve transcript from memory with authorization check."""
-    with TRANSCRIPT_LOCK:
-        transcript = TRANSCRIPT_STORAGE.get(transcript_id)
-        
-        if not transcript:
-            return None
-        
-        # Check expiration
-        age = datetime.now() - transcript["created_at"]
-        if age > TRANSCRIPT_TTL:
-            del TRANSCRIPT_STORAGE[transcript_id]
-            return None
-        
-        # Check authorization
-        if user_id is not None and transcript["user_id"] != user_id:
-            return None
-        
-        return transcript
-
-
-def cleanup_expired_transcripts_memory() -> int:
-    """Remove expired transcripts from memory."""
-    now = datetime.now()
-    with TRANSCRIPT_LOCK:
-        expired = [
-            tid for tid, t in TRANSCRIPT_STORAGE.items()
-            if now - t["created_at"] > TRANSCRIPT_TTL
-        ]
-        for tid in expired:
-            del TRANSCRIPT_STORAGE[tid]
-    
-    return len(expired)
-
-
 # ============ Pydantic Models ============
 
 class ImageConfig(BaseModel):
@@ -144,8 +87,6 @@ async def lifespan(app: FastAPI):
     
     # Shutdown: Clean up expired jobs and transcripts
     expired_jobs = ProgressService.cleanup_expired()
-    expired_transcripts = cleanup_expired_transcripts_memory()
-    print(f"Shutdown cleanup: {expired_jobs} jobs, {expired_transcripts} transcripts removed")
 
 
 app = FastAPI(
@@ -398,13 +339,12 @@ async def create_transcript_job(
     Generate transcript from source material (ASYNC with progress tracking).
     
     Returns job_id immediately. Connect to WebSocket for real-time progress.
-    When complete, result contains transcript_id for use with /jobs/generate-video.
     
     Workflow:
     1. POST to this endpoint with source material
     2. Connect to WebSocket: /ws/progress/{job_id}
     3. Receive progress updates (extracting_content → generating_dialogue)
-    4. Get final result with transcript_id and transcript JSON
+    4. Get final result with transcript JSON
     
     Stages:
     - extracting_content: Parse source (YouTube/audio/PPTX)
@@ -516,19 +456,11 @@ async def _process_transcript_job(
         }
         _add_metadata_to_transcript(transcript_data)
         
-        # Save to memory storage (reuse existing storage for transcript lookup)
-        transcript_id = save_transcript_memory(user_id, transcript_data, source_type)
         
         # Complete job with result
         ProgressService.update_job(
             job_id=job_id,
-            status="completed",
-            # this 24 hours needs to be updated for better synchronization
-            result={
-                "transcript_id": transcript_id,
-                "expires_in_hours": 24,
-                "dialogue": transcript_data["dialogue_data"],
-            },
+            status="completed" 
         )
     
     except Exception as e:
@@ -549,10 +481,9 @@ async def _process_transcript_job(
 @app.post("/jobs/generate-video")
 async def create_video_job(
     background_tasks: BackgroundTasks,
-    transcript_id: str = Form(..., description="Transcript ID from /jobs/generate-transcript"),
     user_id: int = Form(1),
     images: List[UploadFile] = File(default=[], description="Optional educational images"),
-    updated_transcript: str | None = Form(None, description="Optional: Modified transcript JSON with image references"),
+    transcript: str | None = Form(None, description="Optional: Modified transcript JSON with image references"),
     karaoke_captions: bool = Form(True, description="Use karaoke-style captions (word-by-word yellow highlighting). Default: ON"),
 ):
     """
@@ -561,12 +492,11 @@ async def create_video_job(
     Returns job_id immediately. Connect to WebSocket for real-time progress.
     
     Workflow:
-    1. Get transcript_id from /jobs/generate-transcript
-    2. (Optional) Edit transcript and add image references
-    3. POST to this endpoint with transcript_id, optional images, and updated transcript
-    4. Connect to WebSocket: /ws/progress/{job_id}
-    5. Receive progress updates for video generation
-    6. Get final result with collection_id and video URL
+    1. transcript and add image references
+    2. POST to this endpoint with transcript_id, optional images, and updated transcript
+    3. Connect to WebSocket: /ws/progress/{job_id}
+    4. Receive progress updates for video generation
+    5. Get final result with collection_id and video URL
     
     Caption Modes:
     - karaoke_captions=true (default): Words highlight yellow one-by-one as spoken
@@ -584,26 +514,7 @@ async def create_video_job(
     image_dir = None
     
     try:
-        # Retrieve transcript from memory
-        saved_transcript = get_transcript_memory(transcript_id, user_id)
-        if not saved_transcript:
-            raise HTTPException(
-                status_code=404,
-                detail="Transcript not found, expired (24h TTL), or access denied"
-            )
-        
-        # Use updated transcript if provided, otherwise use saved
-        if updated_transcript:
-            try:
-                transcript_data = json.loads(updated_transcript)
-            except json.JSONDecodeError as e:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid transcript JSON format: {str(e)}"
-                )
-        else:
-            transcript_data = saved_transcript["data"]
-        
+        transcript_data = json.loads(transcript)
         # Handle optional images
         session_id = uuid4().hex
         image_dir = None
