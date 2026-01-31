@@ -2,9 +2,7 @@ import asyncio
 import json
 import re
 import shutil
-import threading
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
@@ -67,13 +65,6 @@ class VideoGenerationRequest(BaseModel):
     images: Optional[Dict[str, str]] = None
     background_video: Optional[str] = "minecraft.mp4"
     karaoke_captions: bool = True  # Default ON: word-by-word yellow highlighting
-
-
-
-class SubtopicRequest(BaseModel):
-    """DEPRECATED: Use VideoGenerationRequest instead."""
-    subtopic_transcripts: List[SubtopicPayload]
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -460,7 +451,8 @@ async def _process_transcript_job(
         # Complete job with result
         ProgressService.update_job(
             job_id=job_id,
-            status="completed" 
+            status="completed"
+            result=transcript_data
         )
     
     except Exception as e:
@@ -514,8 +506,11 @@ async def create_video_job(
     image_dir = None
     
     try:
-        transcript_data = json.loads(transcript)
-        # Handle optional images
+        if transcript:
+            transcript_data = json.loads(transcript)
+        else:
+            raise HTTPException(status_code=400, detail="No transcript provided")
+            
         session_id = uuid4().hex
         image_dir = None
         
@@ -737,18 +732,6 @@ def _move_upload_to_disk(upload: UploadFile, destination: Path):
                 break
             buffer.write(chunk)
     upload.file.close()
-
-
-# ============ Transcript Generation Helpers ============
-
-def _add_metadata_to_transcript(transcript_data: dict):
-    """Add line numbers and duration estimates to transcript (in-place)."""
-    for subtopic in transcript_data.get("subtopic_transcripts", []):
-        for idx, line in enumerate(subtopic.get("dialogue", []), start=1):
-            line["line_number"] = idx
-            # Estimate duration: ~150 words/min = ~2.5 words/sec
-            word_count = len(line["caption"].split())
-            line["duration_estimate"] = round(word_count / 2.5, 1)
 
 
 # ============ Image Upload Utilities ============
