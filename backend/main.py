@@ -20,12 +20,14 @@ from backend_pipeline.generate_video import (
     generate_video_from_dialogue,
 )
 
+BACKEND_DIR = Path(__file__).resolve().parent
+
 DIRS = {
-    "background_videos": Path("assets/videos"),
-    "output": Path("assets/output"),
-    "temp_upload": Path("tmp/uploads"),
-    "temp_images": Path("tmp/uploads/images"),
-    "generated_audio": Path("assets/audio/generated"),
+    "background_videos": BACKEND_DIR / "assets" / "videos",
+    "output": BACKEND_DIR / "assets" / "output",
+    "temp_upload": BACKEND_DIR / "tmp" / "uploads",
+    "temp_images": BACKEND_DIR / "tmp" / "uploads" / "images",
+    "generated_audio": BACKEND_DIR / "assets" / "audio" / "generated",
 }
 
 for dir in DIRS.values():
@@ -443,17 +445,13 @@ async def _process_transcript_job(
             )
             return
         
-        # Build transcript data with metadata
-        transcript_data = {
-            "dialogue_data": dialogue.model_dump()
-        }
-        
-        
         # Complete job with result
         ProgressService.update_job(
             job_id=job_id,
             status="completed",
-            result=transcript_data
+            result={
+                "dialogue": dialogue.model_dump()
+            },
         )
     
     except Exception as e:

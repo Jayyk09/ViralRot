@@ -1,7 +1,7 @@
 import subprocess
 import os
 import textwrap
-
+from pathlib import Path
 from backend_pipeline.video_assembly.ass_generator import generate_ass_subtitle_file
 
 # ============ Image Size and Position Constants ============
@@ -111,14 +111,15 @@ def get_character_image(speaker, emotion):
     Returns:
         Path to the character image file
     """
-    base_path = "assets/characters"
+    BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+    base_path =  BACKEND_DIR / "assets" / "characters"
     speaker_lower = speaker.lower()
     
     # Map emotion to image file
     if emotion == "neutral" or not emotion:
-        return f"{base_path}/{speaker_lower}.png"
+        return str(base_path / f"{base_path}/{speaker_lower}.png") 
     else:
-        return f"{base_path}/{speaker_lower}_{emotion}.png"
+        return str(base_path / f"/{speaker_lower}_{emotion}.png")
 
 
 def merge_consecutive_educational_images(educational_images):
