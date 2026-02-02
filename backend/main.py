@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import (
-    generate_video_from_dialogue,
+    generate_video_from_dialogue
 )
 from storage.base import StorageBackend
 

@@ -127,7 +127,7 @@ def generate_audio_from_dialouge(dialouge: str, voice_id: str) -> tuple[bytes, f
 
 
 
-def generate_transcript_to_audio(
+def generate_audio_from_transcript(
     transcript_data: Dict[str, Any], output_dir: str = "assets/audio/segments"
 ) -> List[Dict[str, Any]]:
     """
