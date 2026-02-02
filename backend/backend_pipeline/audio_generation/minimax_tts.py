@@ -3,7 +3,7 @@ import os
 import json
 import requests
 import subprocess
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TypedDict
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -21,7 +21,7 @@ VOICE_MAP = {
 }
 
 
-def _call_minimax_tts(text: str, voice_id: str) -> tuple[bytes, float]:
+def generate_audio_from_dialouge(dialouge: str, voice_id: str) -> tuple[bytes, float]:
     """
     Call MiniMax TTS API for a single text segment.
     
@@ -50,7 +50,7 @@ def _call_minimax_tts(text: str, voice_id: str) -> tuple[bytes, float]:
     
     payload = {
         "model": "speech-2.6-hd",
-        "text": text,
+        "text": dialouge,
         "stream": False,
         "voice_setting": {
             "voice_id": voice_id,
@@ -82,10 +82,37 @@ def _call_minimax_tts(text: str, voice_id: str) -> tuple[bytes, float]:
     if base_resp.get("status_code") != 0:
         status_msg = base_resp.get("status_msg", "Unknown error")
         raise Exception(f"MiniMax API error: {status_msg}")
+
+
+    '''
+    MiniMax response type:
+        {
+          "data": {
+            "audio": "<hex encoded audio>",
+            "status": 2
+          },
+          "extra_info": {
+            "audio_length": 11124,
+            "audio_sample_rate": 32000,
+            "audio_size": 179926,
+            "bitrate": 128000,
+            "word_count": 163,
+            "invisible_character_ratio": 0,
+            "usage_characters": 163,
+            "audio_format": "mp3",
+            "audio_channel": 1
+          },
+          "trace_id": "01b8bf9bb7433cc75c18eee6cfa8fe21",
+          "base_resp": {
+            "status_code": 0,
+            "status_msg": "success"
+          }
+        }
+    ''' 
     
     # Extract audio data
     data = result.get("data", {})
-    if not data or "audio" not in data:
+    if not data["audio"]:
         raise Exception("No audio data in MiniMax response")
     
     hex_audio = data["audio"]
@@ -99,7 +126,8 @@ def _call_minimax_tts(text: str, voice_id: str) -> tuple[bytes, float]:
     return audio_bytes, duration_sec
 
 
-def generate_audio_from_transcript(
+
+def generate_transcript_to_audio(
     transcript_data: Dict[str, Any], output_dir: str = "assets/audio/segments"
 ) -> List[Dict[str, Any]]:
     """
@@ -150,7 +178,7 @@ def generate_audio_from_transcript(
         
         try:
             # Generate audio via MiniMax API
-            audio_bytes, duration = _call_minimax_tts(caption, voice_id)
+            audio_bytes, duration = generate_audio_from_dialouge(caption, voice_id)
             
             # Save audio to file
             output_file = os.path.join(
