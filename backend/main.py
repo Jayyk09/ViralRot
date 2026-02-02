@@ -10,6 +10,7 @@ from uuid import uuid4
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
 from typing import Literal
 
+from services.audio_service import AudioService
 from services.video_service import get_collection_videos
 from services.collection_service import get_collection, get_user_collections, find_last_collection
 from services.progress_service import ProgressService, set_event_loop
@@ -19,6 +20,7 @@ from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import (
     generate_video_from_dialogue,
 )
+from storage.base import StorageBackend
 
 BACKEND_DIR = Path(__file__).resolve().parent
 
@@ -706,6 +708,20 @@ async def _process_video_job(
             image_path = Path(image_dir)
             if image_path.exists():
                 shutil.rmtree(image_path, ignore_errors=True)
+
+
+# ============ Generate Audio from Dialogue
+
+audioService = AudioService()
+
+class AudioRequest(BaseModel):
+    dialogue: str
+    speaker: str
+
+@app.post('/job/process_dialouge')
+async def create_audio_from_dialouge(req: AudioRequest):
+
+    return audioService.create_and_upload_audio(req.dialogue, req.speaker)
 
 
 # ============ Helper Functions ============
