@@ -183,6 +183,7 @@ def generate_video_from_dialogue(
     output_dir: Path | str,
     audio_dir: Path | str,
     user_id: int,
+    video: Optional[str] = None,
     collection_id: Optional[int] = None,
     image_dir: Optional[Path | str] = None,
     storage_backend: Optional[str] = None,
@@ -259,8 +260,8 @@ def generate_video_from_dialogue(
     
     # Select background video
     if is_directory:
-        current_bg_video = get_random_background_video(background_video_path)
-        print(f"🎥 Selected background: {current_bg_video.name}")
+            current_bg_video = get_background_video(background_video_path, video)
+            print(f"Background video selected: {current_bg_video}")
     else:
         current_bg_video = background_video_path
     
