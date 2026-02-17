@@ -718,10 +718,25 @@ class AudioRequest(BaseModel):
     dialogue: str
     speaker: str
 
+class BatchAudioRequest(BaseModel):
+    lines: list[AudioRequest]
+
 @app.post('/job/process_dialouge')
 async def create_audio_from_dialouge(req: AudioRequest):
 
     return audioService.create_and_upload_audio(req.dialogue, req.speaker)
+
+@app.post('/batch/process_dialouges')
+async def batch_process_dialouge_generation(batch_request: BatchAudioRequest):
+    dialouge_batch = []
+    for request_payload in batch_request.lines:
+        line = {}
+        line.update(request_payload.model_dump())
+        res = audioService.create_and_upload_audio(request_payload.dialogue, request_payload.speaker)
+        line.update(res)
+        dialouge_batch.append(line)
+
+    return dialouge_batch
 
 
 # ============ Helper Functions ============
