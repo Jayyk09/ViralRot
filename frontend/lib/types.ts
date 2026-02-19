@@ -22,6 +22,7 @@ export interface TranscriptRequest {
 export interface VideoRequest {
   transcript: string            // JSON string of dialogue data (required)
   user_id: number
+  video: string
   images?: File[]
   karaoke_captions?: boolean   // Default: true (karaoke mode ON)
 }
@@ -42,7 +43,7 @@ export interface JobCreatedResponse {
 // ============ Transcript Types ============
 export type Speaker = 'PETER' | 'STEWIE'
 
-// ============ Image Position Types ============
+// ============ Image Position Types || DEPRECATED ============
 // Small: 300px width, lower right half of screen
 export type SmallImagePosition = 'right-high' | 'right-mid' | 'right-low'
 
@@ -55,19 +56,19 @@ export type LargeImagePosition = 'top-center'
 // All positions combined
 export type ImagePosition = SmallImagePosition | MediumImagePosition | LargeImagePosition
 
+// =============== Image Configuration ====================
 export interface ImageConfig {
-  filename: string
-  size: ImageSize           // small=300px, medium=540px, large=800px
-  position?: ImagePosition  // Position on screen (defaults based on size)
-  start_time?: number       // Delay in seconds after line starts
-  duration?: number         // Display duration in seconds
+  previewUrl: string
+  presignedUrl: string
+  x: number
+  y: number
+  width: number
 }
 
 export interface DialogueLine {
   caption: string
   speaker: Speaker
   emotion?: 'neutral' | 'angry' | 'excited' | 'confused'
-  image?: ImageConfig       // Single image (backward compatible)
   images?: ImageConfig[]    // Multiple simultaneous images
   line_number?: number
   duration_estimate?: number
