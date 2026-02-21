@@ -12,6 +12,7 @@ import {
   IMAGE_LIMITS,
   getPositionsForSize,
 } from './image-positions'
+import { error } from 'console'
 
 // ============ Constants ============
 export const ALLOWED_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif']
@@ -49,9 +50,6 @@ export function isFilenameUsedInTranscript(
   if (!filename || !transcript.dialogue?.dialogue) return false
 
   return transcript.dialogue.dialogue.some(line => {
-    // Check single image
-    if (line.image?.filename === filename) return true
-    // Check images array
     if (line.images?.some(img => img.filename === filename)) return true
     return false
   })
@@ -68,10 +66,6 @@ export function getAllReferencedFilenames(
   if (!transcript.dialogue?.dialogue) return filenames
 
   transcript.dialogue.dialogue.forEach(line => {
-    // Check single image
-    if (line.image?.filename) {
-      filenames.add(line.image.filename)
-    }
     // Check images array
     if (line.images) {
       line.images.forEach(img => {
@@ -124,7 +118,6 @@ export function sanitizeFilename(filename: string): string {
 
 /**
  * Calculate actual image timing given line duration
- */
 export function getActualImageTiming(
   image: ImageConfig,
   lineDuration: number
@@ -139,6 +132,8 @@ export function getActualImageTiming(
     duration: Math.max(0, end - start),
   }
 }
+
+*/
 
 // ============ Validation Functions ============
 
@@ -231,56 +226,8 @@ export function validateImageConfig(
     errors.push(`${lineId}: Image has empty filename`)
   }
 
-  // Size
-  if (!['small', 'medium', 'large'].includes(image.size)) {
-    errors.push(`${lineId}: Invalid size "${image.size}" (must be "small", "medium", or "large")`)
-  }
-
-  // Position validation
-  if (image.position) {
-    if (!isValidPositionForSize(image.size, image.position)) {
-      const validPositions = getPositionsForSize(image.size)
-      errors.push(
-        `${lineId}: Position "${image.position}" is not valid for size "${image.size}". ` +
-        `Valid positions: ${validPositions.join(', ')}`
-      )
-    }
-  }
-
-  // Start time
-  if (image.start_time !== undefined) {
-    if (image.start_time < 0) {
-      errors.push(`${lineId}: start_time cannot be negative (${image.start_time})`)
-    }
-
-    if (lineDuration && image.start_time >= lineDuration) {
-      warnings.push(
-        `${lineId}: start_time (${image.start_time}s) >= line duration (${lineDuration}s), image won't appear`
-      )
-    }
-  }
-
-  // Duration
-  if (image.duration !== undefined) {
-    if (image.duration <= 0) {
-      errors.push(`${lineId}: duration must be positive (${image.duration})`)
-    }
-
-    if (image.duration < FADE_DURATION) {
-      warnings.push(
-        `${lineId}: duration (${image.duration}s) < fade duration (${FADE_DURATION}s), may not be visible`
-      )
-    }
-
-    // Check if start_time + duration exceeds line duration
-    if (lineDuration && image.start_time !== undefined) {
-      const endTime = image.start_time + image.duration
-      if (endTime > lineDuration) {
-        warnings.push(
-          `${lineId}: Image ends at ${endTime}s but line ends at ${lineDuration}s, will be capped`
-        )
-      }
-    }
+  if(!image.x || !image.y || !image.width) {
+      errors.push(`The image has no position or width`)
   }
 }
 
