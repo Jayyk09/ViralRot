@@ -29,6 +29,7 @@ class S3StorageBackend(StorageBackend):
             bucket_name: S3 bucket name
             region: AWS region (default: us-east-2)
         """
+        self.background_prefix = "backgrounds/"
         self.bucket = bucket_name
         self.region = region
         self.s3 = boto3.client("s3", region_name=region)
@@ -62,6 +63,27 @@ class S3StorageBackend(StorageBackend):
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=expires_in
         )
+    def generate_background_urls(self):
+        response = self.s3.list_objects_v2(
+            Bucket=self.bucket,
+            Prefix=self.background_prefix,
+        )
+
+        items = []
+        for obj in response.get("Contents", []):
+            key = obj["Key"]
+            if key.endswith("/"):
+                continue
+            url = self.s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": key},
+                ExpiresIn=3600
+            )
+            items.append({
+                "id": key.split("/")[-1].replace(".mp4", ""),
+                "url": url
+                })
+        return items
     
     def delete(self, key: str) -> bool:
         """Delete file from S3."""

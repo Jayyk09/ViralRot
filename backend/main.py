@@ -18,9 +18,11 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import (
-    generate_video_from_dialogue
+    generate_video_from_dialogue,
+    get_background_video
 )
-from storage.base import StorageBackend
+
+from storage.factory import get_storage_backend
 
 BACKEND_DIR = Path(__file__).resolve().parent
 
@@ -1041,6 +1043,17 @@ async def get_collection_details(
             "video_count": len(sanitized_videos),
             "videos": sanitized_videos,
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/videos/urls")
+async def get_video_urls():
+    try:
+        storage = get_storage_backend()
+        urls = storage.generate_background_urls()
+        return {"videos": urls}
     except HTTPException:
         raise
     except Exception as e:
