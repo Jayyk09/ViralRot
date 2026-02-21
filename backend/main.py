@@ -19,7 +19,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import (
     generate_video_from_dialogue,
-    get_background_video
 )
 
 from storage.factory import get_storage_backend
