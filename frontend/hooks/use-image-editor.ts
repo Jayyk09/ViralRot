@@ -14,6 +14,7 @@ import {
   getUniqueFilename,
   validateBeforeUpload,
 } from '@/lib/validation'
+import { relative } from 'path'
 
 interface UseImageEditorOptions {
   /** Auto-rename duplicate filenames instead of throwing error */
@@ -31,9 +32,11 @@ interface UseImageEditorReturn {
   addImage: (
     lineIdx: number,
     file: File,
-    size: ImageSize
+    x: number,
+    y: number,
+    width: number
   ) => void
-  /** Update image config (size, timing) */
+  /** Update image config (x,y,width) */
   updateImageConfig: (
     lineIdx: number,
     updates: Partial<ImageConfig>
@@ -110,7 +113,7 @@ export function useImageEditor(
   }, [state, validateOnChange])
 
   const addImage = useCallback(
-    (lineIdx: number, file: File, size: ImageSize) => {
+    (lineIdx: number, file: File, x: number, y: number, width: number) => {
       setState(prevState => {
         const newTranscript = deepClone(prevState.transcript)
         const newFiles = new Map(prevState.imageFiles)
@@ -140,8 +143,7 @@ export function useImageEditor(
           return prevState
         }
 
-        line.image = { filename, size }
-
+        (line.images ||= []).push({filename, x, y, width})
         // Track file
         newFiles.set(filename, file)
 
@@ -160,17 +162,15 @@ export function useImageEditor(
   )
 
   const updateImageConfig = useCallback(
-    (lineIdx: number, updates: Partial<ImageConfig>) => {
+    (lineIdx: number, imageIdx: number, updates: Partial<ImageConfig>) => {
       setState(prevState => {
         const newTranscript = deepClone(prevState.transcript)
         const line = newTranscript.dialogue?.dialogue[lineIdx]
 
-        if (!line?.image) {
-          console.error(`No image at line ${lineIdx}`)
-          return prevState
-        }
+        // if not line or line.images then return
+        if (!line || !line.images?.[imageIdx]) return prevState
 
-        line.image = { ...line.image, ...updates }
+        line.images[imageIdx] = {...line.images[imageIdx], ...updates}
 
         return { ...prevState, transcript: newTranscript }
       })
@@ -178,21 +178,21 @@ export function useImageEditor(
     []
   )
 
-  const removeImage = useCallback((lineIdx: number) => {
+  const removeImage = useCallback((lineIdx: number, imageIdx: number) => {
     setState(prevState => {
       const newTranscript = deepClone(prevState.transcript)
       const line = newTranscript.dialogue?.dialogue[lineIdx]
 
-      if (!line?.image) {
-        return prevState
-      }
+      if (!line || !line.images?.[imageIdx]) return prevState
 
-      const filename = line.image.filename
-      delete line.image
+      const filename = line.images[imageIdx].filename
+      const newImages =  line.images.filter((_, idx) => idx != imageIdx)
+      line.images = newImages
 
       // Check if filename is still used elsewhere
       const stillUsed = isFilenameUsedInTranscript(newTranscript, filename)
-
+  
+      // only delete the file that is not referenced by other lines
       if (!stillUsed && filename) {
         const newFiles = new Map(prevState.imageFiles)
         const newPreviews = new Map(prevState.imagePreviewUrls)
