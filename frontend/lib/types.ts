@@ -58,11 +58,11 @@ export type ImagePosition = SmallImagePosition | MediumImagePosition | LargeImag
 
 // =============== Image Configuration ====================
 export interface ImageConfig {
-  previewUrl: string
-  presignedUrl: string
+  filename: string
   x: number
   y: number
   width: number
+  presignedUrl?: string
 }
 
 export interface DialogueLine {
