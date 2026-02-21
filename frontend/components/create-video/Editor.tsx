@@ -1,33 +1,35 @@
-import { TranscriptResult } from "@/lib/types";
+import { fetchBackgroundURLs } from "@/lib/api";
+import { API_BASE_URL, TranscriptResult } from "@/lib/types";
 import { useState, useEffect } from "react";
+import { EditorHeader } from "../ui/create-video-header";
 
 interface EditorProps {
-    transcript: TranscriptResult
+	transcript: TranscriptResult
 }
 
-export function Editor( {transcript} : EditorProps) {
-    const [video, setVideo] = useState()
-    const [selectedLineIdx, setSelectedLineIdx] = useState<Number>()
+export async function Editor({ transcript }: EditorProps) {
+	const response = await fetchBackgroundURLs()
+	const [video, setVideo] = useState(response.videos[0])
+	const [selectedLineIdx, setSelectedLineIdx] = useState<Number>()
 
 
-    return (
-        <div>
+
+	return (
+		<div>
             // Editor Header will manage the preview Video change
-            <EditorHeader 
-                videoOptions={videos}
-                selectedVideo={video}
-                onVideoChange={setVideo}
-            />
+			<EditorHeader
+				videoOptions={response}
+				selectedVideo={video}
+				onVideoChange={setVideo}
+			/>
 
-            <div>
-                <DialogueList 
-                    lines={dialouge} 
-                    selectedLineIdx={selectedLineIdx}
-                    setSelectedLineIdx={setSelectedLineIdx}
-                />
-                <
-                    
-            </div>
-        </div>
-    )
+			<div>
+				<DialogueList
+					lines={dialouge}
+					selectedLineIdx={selectedLineIdx}
+					setSelectedLineIdx={setSelectedLineIdx}
+				/>
+			</div>
+		</div>
+	)
 }
