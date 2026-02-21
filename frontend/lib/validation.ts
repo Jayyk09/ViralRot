@@ -1,17 +1,8 @@
 import {
   ImageConfig,
   SingleDialogue,
-  DialogueLine,
   ValidationResult,
-  ImageSize,
-  ImagePosition,
 } from './types'
-import {
-  isValidPositionForSize,
-  getDefaultPosition,
-  IMAGE_LIMITS,
-  getPositionsForSize,
-} from './image-positions'
 import { error } from 'console'
 
 // ============ Constants ============
@@ -232,69 +223,6 @@ export function validateImageConfig(
 }
 
 /**
- * Validate images array for a dialogue line (checks limits and position conflicts)
- */
-export function validateImagesArray(
-  images: ImageConfig[],
-  lineId: string,
-  errors: string[],
-  warnings: string[]
-): void {
-  // Count images by size
-  const counts = {
-    small: images.filter(img => img.size === 'small').length,
-    medium: images.filter(img => img.size === 'medium').length,
-    large: images.filter(img => img.size === 'large').length,
-  }
-
-  // Check small limit
-  if (counts.small > IMAGE_LIMITS.maxSmall) {
-    errors.push(
-      `${lineId}: Too many small images (${counts.small}). Maximum allowed: ${IMAGE_LIMITS.maxSmall}`
-    )
-  }
-
-  // Check medium limit
-  if (counts.medium > IMAGE_LIMITS.maxMedium) {
-    errors.push(
-      `${lineId}: Too many medium images (${counts.medium}). Maximum allowed: ${IMAGE_LIMITS.maxMedium}`
-    )
-  }
-
-  // Check large limit
-  if (counts.large > IMAGE_LIMITS.maxLarge) {
-    errors.push(
-      `${lineId}: Too many large images (${counts.large}). Maximum allowed: ${IMAGE_LIMITS.maxLarge}`
-    )
-  }
-
-  // Check large/medium exclusivity
-  if (counts.large > 0 && counts.medium > 0) {
-    errors.push(
-      `${lineId}: Cannot mix large and medium images. Use either 1 large OR up to 2 medium.`
-    )
-  }
-
-  // Check for duplicate positions
-  const usedPositions = new Set<string>()
-  images.forEach((img, idx) => {
-    if (img.position) {
-      if (usedPositions.has(img.position)) {
-        errors.push(
-          `${lineId}: Duplicate position "${img.position}" used by multiple images`
-        )
-      }
-      usedPositions.add(img.position)
-    }
-  })
-
-  // Validate each individual image
-  images.forEach((img, idx) => {
-    validateImageConfig(img, `${lineId} Image ${idx + 1}`, errors, warnings)
-  })
-}
-
-/**
  * Validate image timing against line duration
  */
 export function validateImageTiming(
@@ -380,23 +308,6 @@ export function validateBeforeUpload(
 
         if (!line.speaker || !['PETER', 'STEWIE'].includes(line.speaker)) {
           errors.push(`${lineId}: Invalid speaker "${line.speaker}"`)
-        }
-
-        // 6. Validate single image if present
-        if (line.image) {
-          validateImageConfig(line.image, lineId, errors, warnings, line.duration_estimate)
-        }
-
-        // 7. Validate images array if present
-        if (line.images && line.images.length > 0) {
-          validateImagesArray(line.images, lineId, errors, warnings)
-        }
-
-        // 8. Warn if both image and images are present
-        if (line.image && line.images && line.images.length > 0) {
-          warnings.push(
-            `${lineId}: Both "image" and "images" are set. Backend will use "images" array.`
-          )
         }
       })
     }
