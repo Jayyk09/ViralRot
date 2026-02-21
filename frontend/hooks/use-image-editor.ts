@@ -39,14 +39,16 @@ interface UseImageEditorReturn {
   /** Update image config (x,y,width) */
   updateImageConfig: (
     lineIdx: number,
+    imageIdx: number,
     updates: Partial<ImageConfig>
   ) => void
   /** Remove image from a line */
-  removeImage: (lineIdx: number) => void
+  removeImage: (lineIdx: number, imageIdx: number) => void
   /** Copy image reference to another line */
   copyImageToLine: (
     fromLineIdx: number,
-    toLineIdx: number
+    toLineIdx: number,
+    imageIdx: number
   ) => void
   /** Replace an image file (keeps filename, updates content) */
   replaceImageFile: (oldFilename: string, newFile: File) => void
@@ -218,11 +220,11 @@ export function useImageEditor(
   }, [])
 
   const copyImageToLine = useCallback(
-    (fromLineIdx: number, toLineIdx: number) => {
+    (fromLineIdx: number, toLineIdx: number, imageIdx: number) => {
       setState(prevState => {
         const fromLine = prevState.transcript.dialogue?.dialogue[fromLineIdx]
 
-        if (!fromLine?.image) {
+        if (!fromLine?.images) {
           console.error(`Source line has no image`)
           return prevState
         }
@@ -230,13 +232,12 @@ export function useImageEditor(
         const newTranscript = deepClone(prevState.transcript)
         const toLine = newTranscript.dialogue?.dialogue[toLineIdx]
 
-        if (!toLine) {
+        if (!toLine.images) {
           console.error(`Invalid target line: ${toLineIdx}`)
           return prevState
         }
 
-        // Copy image config (same filename, can have different timing/size)
-        toLine.image = { ...fromLine.image }
+        (toLine.images || []).push(fromLine.images[imageIdx])
 
         return { ...prevState, transcript: newTranscript }
       })
@@ -314,7 +315,7 @@ export function useImageEditor(
 
       // Remove all image references (single dialogue format)
       newTranscript.dialogue?.dialogue.forEach(line => {
-        delete line.image
+        delete line.images
       })
 
       // Revoke all preview URLs
