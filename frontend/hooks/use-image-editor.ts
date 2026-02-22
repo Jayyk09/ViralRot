@@ -10,11 +10,9 @@ import {
 import {
     deepClone,
     isFilenameUsedInTranscript,
-    getAllReferencedFilenames,
     getUniqueFilename,
     validateBeforeUpload,
 } from "@/lib/validation";
-import { relative } from "path";
 
 interface UseImageEditorOptions {
     /** Auto-rename duplicate filenames instead of throwing error */
@@ -29,7 +27,7 @@ interface UseImageEditorReturn {
     /** Validation result */
     validation: ValidationResult;
     /** Add an image to a specific dialogue line */
-    addImage: (
+    addImageToLine: (
         lineIdx: number,
         file: File,
         x: number,
@@ -45,7 +43,7 @@ interface UseImageEditorReturn {
     /** Remove image from a line */
     removeImage: (lineIdx: number, imageIdx: number) => void;
     /** Copy image reference to another line */
-    copyImageToLine: (
+    spanImageToLines: (
         fromLineIdx: number,
         toLineIdx: number,
         imageIdx: number,
@@ -114,7 +112,7 @@ export function useImageEditor(
         }
     }, [state, validateOnChange]);
 
-    const addImage = useCallback(
+    const addImageToLine = useCallback(
         (lineIdx: number, file: File, x: number, y: number, width: number) => {
             setState((prevState) => {
                 const newTranscript = deepClone(prevState.transcript);
@@ -240,18 +238,41 @@ export function useImageEditor(
         });
     }, []);
 
-    const copyImageToLine = useCallback(
+    const spanImageToLines = useCallback(
         (fromLineIdx: number, toLineIdx: number, imageIdx: number) => {
             setState((prevState) => {
-                const fromLine =
-                    prevState.transcript.dialogue?.dialogue[fromLineIdx];
+                const newTranscript = deepClone(prevState.transcript);
+                const dialogue = newTranscript.dialogue?.dialogue;
+                if (!dialogue) return prevState;
 
-                if (!fromLine?.images) {
+                const fromLine = dialogue[fromLineIdx];
+                if (!fromLine) return prevState;
+
+                if (!fromLine?.images?.[imageIdx]) {
+                        console.error(`No image at ${fromLineIdx} line image index ${imageIdx}`);
+                        return prevState;
+                }
+
+                const imageConfig = fromLine?.images?.[imageIdx];
+                if (!imageConfig) {
                     console.error(`Source line has no image`);
                     return prevState;
                 }
 
-                const newTranscript = deepClone(prevState.transcript);
+                // filter out filename form subsequent images to clean up
+                for(let i = fromLineIdx; i <= dialogue.length; i++) {
+                        const line = dialogue[i];
+                        line.images?.filter(( image => {
+                                image.filename != imageConfig.filename;
+                        }))
+                }
+
+                // copy image fromLineIdx to toLineIdx images array by destructuring it
+                for(let i = fromLineIdx + 1; i <= toLineIdx; i++) {
+                        // get line and then get the images
+                        const line = dialogue[i];
+                        (line.images || []).push({...imageConfig});
+                }
                 const toLine = newTranscript.dialogue?.dialogue[toLineIdx];
 
                 if (!toLine.images) {
@@ -386,10 +407,10 @@ export function useImageEditor(
     return {
         state,
         validation,
-        addImage,
+        addImageToLine,
         updateImageConfig,
         removeImage,
-        copyImageToLine,
+        spanImageToLines,
         replaceImageFile,
         updateCaption,
         getPreviewUrl,
