@@ -18,9 +18,10 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import (
-    generate_video_from_dialogue
+    generate_video_from_dialogue,
 )
-from storage.base import StorageBackend
+
+from storage.factory import get_storage_backend
 
 BACKEND_DIR = Path(__file__).resolve().parent
 
@@ -475,6 +476,7 @@ async def _process_transcript_job(
 async def create_video_job(
     background_tasks: BackgroundTasks,
     user_id: int = Form(1),
+    video: str = Form(True, description="Optional background video name"), 
     images: List[UploadFile] = File(default=[], description="Optional educational images"),
     transcript: str | None = Form(None, description="Optional: Modified transcript JSON with image references"),
     karaoke_captions: bool = Form(True, description="Use karaoke-style captions (word-by-word yellow highlighting). Default: ON"),
@@ -561,6 +563,7 @@ async def create_video_job(
             _process_video_job,
             job_id=job_id,
             user_id=user_id,
+            video=video,
             transcript_data=transcript_data,
             image_dir=str(image_dir) if image_dir else None,
             session_id=session_id,
@@ -587,6 +590,7 @@ async def create_video_job(
 async def _process_video_job(
     job_id: str,
     user_id: int,
+    video: str,
     transcript_data: dict,
     image_dir: Optional[str],
     session_id: str,
@@ -661,6 +665,7 @@ async def _process_video_job(
             str(video_output_dir),
             str(audio_output_dir),
             user_id,
+            video,
             None,  # collection_id (auto-create)
             image_dir,
             None,  # storage_backend
@@ -1037,6 +1042,17 @@ async def get_collection_details(
             "video_count": len(sanitized_videos),
             "videos": sanitized_videos,
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/videos/urls")
+async def get_video_urls():
+    try:
+        storage = get_storage_backend()
+        urls = storage.generate_background_urls()
+        return {"videos": urls}
     except HTTPException:
         raise
     except Exception as e:

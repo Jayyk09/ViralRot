@@ -33,9 +33,10 @@ def slugify(value: str) -> str:
     return safe[:64] or "dialogue"
 
 
-def get_random_background_video(videos_dir: Path | str) -> Path:
+def get_background_video(videos_dir: Path | str, video: Optional[str]) -> Path:
     """
     Randomly select a background video from the videos directory.
+    If "video" provided then select a video that matches the name else select a random video
     Returns the path to the selected video.
     """
     videos_path = Path(videos_dir)
@@ -46,11 +47,19 @@ def get_random_background_video(videos_dir: Path | str) -> Path:
     # Get all .mp4 files from the videos directory
     video_files = list(videos_path.glob("*.mp4"))
     
-    if not video_files:
+    if not video_files or video_files == None:
         raise FileNotFoundError(f"No background videos found in {videos_dir}")
-    
-    # Randomly select one video
-    selected_video = random.choice(video_files)
+
+    if video:
+        matching_videos = [f for f in video_files if video in f.name.lower()]
+    else:
+        matching_videos = []
+        
+    if matching_videos:
+        selected_video = matching_videos[0]
+    else:
+        # Randomly select one video
+        selected_video = random.choice(video_files)
     
     return selected_video
 
@@ -174,6 +183,7 @@ def generate_video_from_dialogue(
     output_dir: Path | str,
     audio_dir: Path | str,
     user_id: int,
+    video: Optional[str] = None,
     collection_id: Optional[int] = None,
     image_dir: Optional[Path | str] = None,
     storage_backend: Optional[str] = None,
@@ -250,8 +260,8 @@ def generate_video_from_dialogue(
     
     # Select background video
     if is_directory:
-        current_bg_video = get_random_background_video(background_video_path)
-        print(f"🎥 Selected background: {current_bg_video.name}")
+            current_bg_video = get_background_video(background_video_path, video)
+            print(f"Background video selected: {current_bg_video}")
     else:
         current_bg_video = background_video_path
     

@@ -41,6 +41,18 @@ class StorageBackend(ABC):
         pass
     
     @abstractmethod
+    def generate_background_urls(self) -> list[Dict[str, str]]:
+        """
+        Generate temporary access URLs for background videos.
+        
+        Returns:
+            List of id, URL dicts.
+            Id is the file name.
+            URL is the temporary access URL (presigned URL for S3, file:// for local)
+        """
+        pass
+         
+    @abstractmethod 
     def delete(self, key: str) -> bool:
         """
         Delete file from storage.
