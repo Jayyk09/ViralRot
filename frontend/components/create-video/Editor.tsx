@@ -29,7 +29,7 @@ export function Editor({ transcript }: EditorProps) {
 
     useEffect(() => {
         fetchBackgroundURLs()
-            .then((res) => {
+            .then((res: BackgroundUrls) => {
                 setVideoOptions(res);
                 if (res.videos.length > 0) setSelectedVideo(res.videos[0] ?? null);
             })
@@ -50,7 +50,7 @@ export function Editor({ transcript }: EditorProps) {
             {/* Main content */}
             <div className="flex flex-1 min-h-0">
                 {/* Left: Dialogue list */}
-                <div className="w-72 shrink-0 border-r border-border/60 flex flex-col min-h-0">
+                <div className="border-r border-border/60 flex flex-col flex-1 min-h-0">
                     <DialogueList
                         lines={lines}
                         selectedLineIdx={selectedLineIdx}
@@ -61,7 +61,7 @@ export function Editor({ transcript }: EditorProps) {
                 {/* Right: Preview + Properties */}
                 <div className="flex flex-col flex-1 min-h-0">
                     {/* Preview panel */}
-                    <div className="flex-1 min-h-0 flex items-center justify-center p-4 bg-muted/20">
+                    <div className="flex-1 min-h-0 relative overflow-hidden flex items-center justify-center p-4 bg-muted/20">
                         <PreviewPanel
                             video={selectedVideo?.url ?? ""}
                             selectedLine={lines[selectedLineIdx] ?? lines[0]}

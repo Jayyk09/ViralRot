@@ -22,9 +22,9 @@ export function PreviewPanel({ selectedLine, video }: PreviewPanelProps) {
 
     return (
         <div>
-            <div ref={widthRef} className="h-full aspect-[9/16] relative">
+            <div ref={widthRef} className="absolute inset-0 flex justify-center items-center">
                 <video
-                    className="absolute inset-0"
+                    className="h-full w-auto aspect-[9/16] max-w-full"
                     autoPlay
                     muted
                     loop
@@ -43,12 +43,10 @@ export function PreviewPanel({ selectedLine, video }: PreviewPanelProps) {
                         alt=""
                     />
                 ))}
-                //put
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
                     {selectedLine.caption}
                 </div>
             </div>
-            <p>{width}</p>
         </div>
     );
 }
