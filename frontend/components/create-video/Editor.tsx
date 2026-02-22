@@ -1,35 +1,98 @@
-import { fetchBackgroundURLs } from "@/lib/api";
-import { API_BASE_URL, TranscriptResult } from "@/lib/types";
+"use client";
+
 import { useState, useEffect } from "react";
-import { EditorHeader } from "../ui/create-video-header";
+import { fetchBackgroundURLs, BackgroundUrl, BackgroundUrls } from "@/lib/api";
+import { TranscriptResult } from "@/lib/types";
+import { useImageEditor } from "@/hooks/use-image-editor";
+import { EditorHeader } from "@/components/ui/create-video-header";
+import { PreviewPanel } from "./previewPanel";
+import { DialogueList } from "./DialogueList";
+import { PropertiesPanel } from "./PropertiesPanel";
+import { EditorFooter } from "./EditorFooter";
 
 interface EditorProps {
-	transcript: TranscriptResult
+    transcript: TranscriptResult;
 }
 
-export async function Editor({ transcript }: EditorProps) {
-	const response = await fetchBackgroundURLs()
-	const [video, setVideo] = useState(response.videos[0])
-	const [selectedLineIdx, setSelectedLineIdx] = useState<Number>()
+export function Editor({ transcript }: EditorProps) {
+    const [videoOptions, setVideoOptions] = useState<BackgroundUrls | null>(null);
+    const [selectedVideo, setSelectedVideo] = useState<BackgroundUrl | null>(null);
+    const [selectedLineIdx, setSelectedLineIdx] = useState(0);
 
+    // Global voice/speed/pitch settings
+    const [voice, setVoice] = useState("en_us_peter_v2");
+    const [speed, setSpeed] = useState(1.0);
+    const [pitch, setPitch] = useState(1.0);
 
+    const editor = useImageEditor(transcript);
+    const lines = editor.state.transcript.dialogue?.dialogue ?? [];
 
-	return (
-		<div>
-            // Editor Header will manage the preview Video change
-			<EditorHeader
-				videoOptions={response}
-				selectedVideo={video}
-				onVideoChange={setVideo}
-			/>
+    useEffect(() => {
+        fetchBackgroundURLs()
+            .then((res) => {
+                setVideoOptions(res);
+                if (res.videos.length > 0) setSelectedVideo(res.videos[0] ?? null);
+            })
+            .catch(console.error);
+    }, []);
 
-			<div>
-				<DialogueList
-					lines={dialouge}
-					selectedLineIdx={selectedLineIdx}
-					setSelectedLineIdx={setSelectedLineIdx}
-				/>
-			</div>
-		</div>
-	)
+    return (
+        <div className="flex flex-col h-screen bg-background overflow-hidden">
+            {/* Top header bar */}
+            {videoOptions && (
+                <EditorHeader
+                    videoOptions={videoOptions}
+                    selectedVideo={selectedVideo}
+                    onVideoChange={setSelectedVideo}
+                />
+            )}
+
+            {/* Main content */}
+            <div className="flex flex-1 min-h-0">
+                {/* Left: Dialogue list */}
+                <div className="w-72 shrink-0 border-r border-border/60 flex flex-col min-h-0">
+                    <DialogueList
+                        lines={lines}
+                        selectedLineIdx={selectedLineIdx}
+                        setSelectedLineIdx={setSelectedLineIdx}
+                    />
+                </div>
+
+                {/* Right: Preview + Properties */}
+                <div className="flex flex-col flex-1 min-h-0">
+                    {/* Preview panel */}
+                    <div className="flex-1 min-h-0 flex items-center justify-center p-4 bg-muted/20">
+                        <PreviewPanel
+                            video={selectedVideo?.url ?? ""}
+                            selectedLine={lines[selectedLineIdx] ?? lines[0]}
+                        />
+                    </div>
+
+                    {/* Properties panel */}
+                    <div className="shrink-0 border-t border-border/60">
+                        <div className="px-4 py-2 border-b border-border/40">
+                            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                Properties
+                            </span>
+                        </div>
+                        <PropertiesPanel
+                            voice={voice}
+                            speed={speed}
+                            pitch={pitch}
+                            onVoiceChange={setVoice}
+                            onSpeedChange={setSpeed}
+                            onPitchChange={setPitch}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* Footer timeline */}
+            <EditorFooter
+                lines={lines}
+                selectedLineIdx={selectedLineIdx}
+                onSelectLine={setSelectedLineIdx}
+            />
+        </div>
+    );
 }
