@@ -5,7 +5,7 @@ import { fetchBackgroundURLs, BackgroundUrl, BackgroundUrls } from "@/lib/api";
 import { TranscriptResult } from "@/lib/types";
 import { useImageEditor } from "@/hooks/use-image-editor";
 import { EditorHeader } from "@/components/ui/create-video-header";
-import { PreviewPanel } from "./previewPanel";
+import { CanvasPreview } from "./CanvasPreview";
 import { DialogueList } from "./DialogueList";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { EditorFooter } from "./EditorFooter";
@@ -60,11 +60,14 @@ export function Editor({ transcript }: EditorProps) {
 
                 {/* Right: Preview + Properties */}
                 <div className="flex flex-col flex-1 min-h-0">
-                    {/* Preview panel */}
-                    <div className="flex-1 min-h-0 relative overflow-hidden flex items-center justify-center p-4 bg-muted/20">
-                        <PreviewPanel
-                            video={selectedVideo?.url ?? ""}
-                            selectedLine={lines[selectedLineIdx] ?? lines[0]}
+                    {/* Preview panel - Canvas-based rendering */}
+                    <div className="flex-1 min-h-0 relative overflow-hidden p-4 bg-muted/20">
+                        <CanvasPreview
+                            videoUrl={selectedVideo?.url ?? ""}
+                            lines={lines}
+                            selectedLineIdx={selectedLineIdx}
+                            onSegmentChange={setSelectedLineIdx}
+                            className="w-full h-full"
                         />
                     </div>
 
