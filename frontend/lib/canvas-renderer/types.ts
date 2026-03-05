@@ -7,6 +7,15 @@
 
 import { DialogueLine } from "@/lib/types";
 
+// ============ Caption Mode ============
+
+/**
+ * Caption rendering mode matching backend FFmpeg options
+ * - "box": Traditional captions with background box (drawtext)
+ * - "karaoke": Word-by-word highlighting (ASS subtitles with \kf tags)
+ */
+export type CaptionMode = "box" | "karaoke";
+
 // ============ Renderer Configuration ============
 
 /**
@@ -19,6 +28,8 @@ export interface RendererConfig {
     height: number;
     /** Frames per second for render loop (default: 30) */
     fps: number;
+    /** Caption rendering mode (default: "box") */
+    captionMode: CaptionMode;
 }
 
 /** Default configuration matching backend FFmpeg settings */
@@ -26,6 +37,7 @@ export const DEFAULT_RENDERER_CONFIG: RendererConfig = {
     width: 1080,
     height: 1920,
     fps: 30,
+    captionMode: "box",
 };
 
 // ============ Segment Types ============
@@ -141,6 +153,55 @@ export const SPEAKER_CAPTION_STYLES: Record<"PETER" | "STEWIE", CaptionStyle> =
             maxCharsPerLine: 32,
         },
     };
+
+// ============ Karaoke Word Timing ============
+
+/**
+ * Timing information for a single word in karaoke mode.
+ * Matches backend calculate_word_timings() output.
+ */
+export interface WordTiming {
+    /** The word text */
+    word: string;
+    /** Start time relative to segment start (in seconds) */
+    startTime: number;
+    /** End time relative to segment start (in seconds) */
+    endTime: number;
+    /** Duration in seconds */
+    duration: number;
+}
+
+/**
+ * Karaoke style configuration matching backend ASS subtitle styling.
+ * Uses white → yellow highlighting with black outline, no background box.
+ */
+export interface KaraokeStyle {
+    /** Font family */
+    fontFamily: string;
+    /** Font size in pixels */
+    fontSize: number;
+    /** Color for unspoken words (white) */
+    unspokenColor: string;
+    /** Color for spoken/highlighted words (yellow) */
+    spokenColor: string;
+    /** Outline color for readability */
+    outlineColor: string;
+    /** Outline width in pixels */
+    outlineWidth: number;
+    /** Maximum words per line (matches backend max_words_per_chunk) */
+    maxWordsPerLine: number;
+}
+
+/** Default karaoke style matching backend ASS settings */
+export const DEFAULT_KARAOKE_STYLE: KaraokeStyle = {
+    fontFamily: "Arial",
+    fontSize: 48,
+    unspokenColor: "#FFFFFF", // White
+    spokenColor: "#FFFF00", // Yellow
+    outlineColor: "#000000", // Black
+    outlineWidth: 3,
+    maxWordsPerLine: 5,
+};
 
 // ============ Renderer State ============
 

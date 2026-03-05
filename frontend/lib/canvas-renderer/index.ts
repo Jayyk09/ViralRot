@@ -33,6 +33,9 @@ export type {
     RendererState,
     SegmentData,
     CaptionStyle,
+    CaptionMode,
+    WordTiming,
+    KaraokeStyle,
     RendererEventType,
     RendererEventCallback,
     RendererEvent,
@@ -41,4 +44,5 @@ export type {
 export {
     DEFAULT_RENDERER_CONFIG,
     SPEAKER_CAPTION_STYLES,
+    DEFAULT_KARAOKE_STYLE,
 } from "./types";
