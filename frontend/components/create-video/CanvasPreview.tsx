@@ -11,14 +11,13 @@
  * - Educational images at correct positions
  * - Styled captions (speaker colors, text wrapping)
  * - Segment-based preview (shows selected dialogue line)
- * - Caption mode toggle (box vs karaoke)
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { DialogueLine } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useCanvasRenderer } from "@/hooks/use-canvas-renderer";
-import { Play, Pause, Loader2, Type, Sparkles } from "lucide-react";
+import { Play, Pause, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CanvasPreviewProps {
@@ -34,8 +33,6 @@ interface CanvasPreviewProps {
     previewUrls?: Map<string, string>;
     /** Caption rendering mode */
     captionMode?: CaptionMode;
-    /** Callback when caption mode changes */
-    onCaptionModeChange?: (mode: CaptionMode) => void;
     /** Additional class names */
     className?: string;
 }
@@ -47,11 +44,8 @@ export function CanvasPreview({
     onSegmentChange,
     previewUrls,
     captionMode = "box",
-    onCaptionModeChange,
     className,
 }: CanvasPreviewProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
-
     const {
         canvasRef,
         currentSegmentIdx,
@@ -76,60 +70,17 @@ export function CanvasPreview({
         }
     }, [selectedLineIdx, currentSegmentIdx, setCurrentSegmentIdx]);
 
-    // Handle container resize to scale canvas properly
-    useEffect(() => {
-        const container = containerRef.current;
-        const canvas = canvasRef.current;
-        if (!container || !canvas) return;
-
-        const resizeObserver = new ResizeObserver(() => {
-            // Canvas maintains 9:16 aspect ratio
-            // Scale to fit within container while preserving ratio
-            const containerWidth = container.clientWidth;
-            const containerHeight = container.clientHeight;
-
-            const canvasAspect = 9 / 16; // width/height
-            const containerAspect = containerWidth / containerHeight;
-
-            let displayWidth: number;
-            let displayHeight: number;
-
-            if (containerAspect > canvasAspect) {
-                // Container is wider than canvas aspect - fit to height
-                displayHeight = containerHeight;
-                displayWidth = displayHeight * canvasAspect;
-            } else {
-                // Container is taller than canvas aspect - fit to width
-                displayWidth = containerWidth;
-                displayHeight = displayWidth / canvasAspect;
-            }
-
-            canvas.style.width = `${displayWidth}px`;
-            canvas.style.height = `${displayHeight}px`;
-        });
-
-        resizeObserver.observe(container);
-
-        return () => {
-            resizeObserver.disconnect();
-        };
-    }, [canvasRef]);
-
     return (
         <div
-            ref={containerRef}
             className={cn(
-                "relative flex items-center justify-center bg-black/50 rounded-lg overflow-hidden",
+                "relative bg-black/50 rounded-lg overflow-hidden",
                 className,
             )}
         >
             {/* Canvas Element */}
             <canvas
                 ref={canvasRef}
-                className="max-w-full max-h-full rounded shadow-lg"
-                style={{
-                    imageRendering: "auto",
-                }}
+                className="w-full h-full rounded"
             />
 
             {/* Loading Overlay */}
@@ -140,7 +91,7 @@ export function CanvasPreview({
             )}
 
             {/* Playback Controls */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2">
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
                 <button
                     onClick={togglePlayback}
                     className="p-2 rounded-full bg-black/60 hover:bg-black/80 transition-colors"
@@ -152,26 +103,6 @@ export function CanvasPreview({
                         <Play className="w-4 h-4 text-white ml-0.5" />
                     )}
                 </button>
-                
-                {/* Caption Mode Toggle */}
-                {onCaptionModeChange && (
-                    <button
-                        onClick={() => onCaptionModeChange(captionMode === "box" ? "karaoke" : "box")}
-                        className={cn(
-                            "p-2 rounded-full transition-colors flex items-center gap-1",
-                            captionMode === "karaoke"
-                                ? "bg-yellow-500/80 hover:bg-yellow-500"
-                                : "bg-black/60 hover:bg-black/80"
-                        )}
-                        title={captionMode === "karaoke" ? "Karaoke Mode (click for Box)" : "Box Mode (click for Karaoke)"}
-                    >
-                        {captionMode === "karaoke" ? (
-                            <Sparkles className="w-4 h-4 text-white" />
-                        ) : (
-                            <Type className="w-4 h-4 text-white" />
-                        )}
-                    </button>
-                )}
             </div>
 
             {/* Segment Info */}

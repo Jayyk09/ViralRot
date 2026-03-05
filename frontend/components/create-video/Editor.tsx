@@ -51,11 +51,13 @@ export function Editor({ transcript }: EditorProps) {
                         lines={lines}
                         selectedLineIdx={selectedLineIdx}
                         setSelectedLineIdx={setSelectedLineIdx}
+                        captionMode={captionMode}
+                        onCaptionModeChange={setCaptionMode}
                     />
                 </div>
 
                 {/* Right: Preview panel - Canvas-based rendering */}
-                <div className="flex-1 min-h-0 relative overflow-hidden p-4 bg-muted/20">
+                <div className="flex-1 min-h-0 relative overflow-hidden p-4 bg-muted/20 flex items-center justify-center">
                     <CanvasPreview
                         videoUrl={selectedVideo?.url ?? ""}
                         lines={lines}
@@ -63,8 +65,7 @@ export function Editor({ transcript }: EditorProps) {
                         onSegmentChange={setSelectedLineIdx}
                         previewUrls={editor.state.imagePreviewUrls}
                         captionMode={captionMode}
-                        onCaptionModeChange={setCaptionMode}
-                        className="w-full h-full"
+                        className="h-full aspect-[9/16]"
                     />
                 </div>
             </div>

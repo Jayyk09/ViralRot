@@ -1,15 +1,18 @@
 "use client";
 
 import { DialogueLine } from "@/lib/types";
+import { CaptionMode } from "@/lib/canvas-renderer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Upload } from "lucide-react";
+import { Upload, Type, Sparkles } from "lucide-react";
 
 interface DialogueListProps {
         lines: DialogueLine[];
         selectedLineIdx: number;
         setSelectedLineIdx: (idx: number) => void;
         onUploadLine?: (idx: number) => void;
+        captionMode?: CaptionMode;
+        onCaptionModeChange?: (mode: CaptionMode) => void;
 }
 
 const SPEAKER_BADGE: Record<string, string> = {
@@ -22,15 +25,36 @@ export function DialogueList({
         selectedLineIdx,
         setSelectedLineIdx,
         onUploadLine,
+        captionMode = "box",
+        onCaptionModeChange,
 }: DialogueListProps) {
 
 
         return (
                 <div className="flex flex-col h-full min-h-0">
-                        <div className="px-3 py-2 border-b border-border/60 shrink-0">
+                        <div className="px-3 py-2 border-b border-border/60 shrink-0 flex items-center justify-between">
                                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                                         Dialogue
                                 </span>
+                                {onCaptionModeChange && (
+                                        <button
+                                                onClick={() => onCaptionModeChange(captionMode === "box" ? "karaoke" : "box")}
+                                                className={cn(
+                                                        "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors",
+                                                        captionMode === "karaoke"
+                                                                ? "bg-yellow-500/20 text-yellow-600 hover:bg-yellow-500/30"
+                                                                : "bg-muted text-muted-foreground hover:bg-accent"
+                                                )}
+                                                title={captionMode === "karaoke" ? "Karaoke Mode" : "Box Mode"}
+                                        >
+                                                {captionMode === "karaoke" ? (
+                                                        <Sparkles className="w-3 h-3" />
+                                                ) : (
+                                                        <Type className="w-3 h-3" />
+                                                )}
+                                                {captionMode === "karaoke" ? "Karaoke" : "Box"}
+                                        </button>
+                                )}
                         </div>
                         <ScrollArea className="flex-1">
                                 <div className="p-2 space-y-1.5">
