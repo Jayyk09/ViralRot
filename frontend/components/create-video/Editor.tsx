@@ -67,6 +67,7 @@ export function Editor({ transcript }: EditorProps) {
                             lines={lines}
                             selectedLineIdx={selectedLineIdx}
                             onSegmentChange={setSelectedLineIdx}
+                            previewUrls={editor.state.imagePreviewUrls}
                             className="w-full h-full"
                         />
                     </div>

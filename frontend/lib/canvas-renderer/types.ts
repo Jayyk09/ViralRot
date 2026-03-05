@@ -5,7 +5,7 @@
  * Designed to match backend FFmpeg rendering as closely as possible.
  */
 
-import { DialogueLine, ImageConfig } from "@/lib/types";
+import { DialogueLine } from "@/lib/types";
 
 // ============ Renderer Configuration ============
 

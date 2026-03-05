@@ -11,7 +11,6 @@ import {
     VideoLayer,
     ImageOverlayLayer,
     CaptionLayer,
-    RendererState,
     SegmentData,
 } from "@/lib/canvas-renderer";
 import { DialogueLine } from "@/lib/types";
@@ -25,6 +24,8 @@ export interface UseCanvasRendererOptions {
     initialSegmentIdx?: number;
     /** Whether to autoplay when segment changes */
     autoplay?: boolean;
+    /** Preview URLs for local blob images (filename -> blob URL) */
+    previewUrls?: Map<string, string>;
 }
 
 export interface UseCanvasRendererReturn {
@@ -55,11 +56,12 @@ export interface UseCanvasRendererReturn {
 export function useCanvasRenderer(
     options: UseCanvasRendererOptions,
 ): UseCanvasRendererReturn {
-    const { videoUrl, lines, initialSegmentIdx = 0, autoplay = true } = options;
+    const { videoUrl, lines, initialSegmentIdx = 0, autoplay = true, previewUrls } = options;
 
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const rendererRef = useRef<CanvasRenderer | null>(null);
     const videoLayerRef = useRef<VideoLayer | null>(null);
+    const imageLayerRef = useRef<ImageOverlayLayer | null>(null);
 
     const [currentSegmentIdx, setCurrentSegmentIdxState] = useState(initialSegmentIdx);
     const [isPlaying, setIsPlaying] = useState(autoplay);
@@ -93,6 +95,7 @@ export function useCanvasRenderer(
         // Store refs
         rendererRef.current = renderer;
         videoLayerRef.current = videoLayer;
+        imageLayerRef.current = imageLayer;
 
         // Set up event listeners
         renderer.on("play", () => setIsPlaying(true));
@@ -108,6 +111,7 @@ export function useCanvasRenderer(
             renderer.dispose();
             rendererRef.current = null;
             videoLayerRef.current = null;
+            imageLayerRef.current = null;
         };
     }, []); // Only run once on mount
 
@@ -117,6 +121,15 @@ export function useCanvasRenderer(
             videoLayerRef.current.setVideoUrl(videoUrl);
         }
     }, [videoUrl]);
+
+    // Update preview URLs when they change
+    useEffect(() => {
+        if (imageLayerRef.current && previewUrls) {
+            imageLayerRef.current.setPreviewUrls(previewUrls);
+            // Clear cache to force reload with new URLs
+            imageLayerRef.current.clearCache();
+        }
+    }, [previewUrls]);
 
     // Handle segment changes
     useEffect(() => {

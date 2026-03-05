@@ -28,6 +28,8 @@ interface CanvasPreviewProps {
     selectedLineIdx: number;
     /** Callback when user wants to change segment (optional) */
     onSegmentChange?: (idx: number) => void;
+    /** Preview URLs for local blob images (filename -> blob URL) */
+    previewUrls?: Map<string, string>;
     /** Additional class names */
     className?: string;
 }
@@ -37,6 +39,7 @@ export function CanvasPreview({
     lines,
     selectedLineIdx,
     onSegmentChange,
+    previewUrls,
     className,
 }: CanvasPreviewProps) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -54,6 +57,7 @@ export function CanvasPreview({
         lines,
         initialSegmentIdx: selectedLineIdx,
         autoplay: true,
+        previewUrls,
     });
 
     // Sync external selectedLineIdx with internal state

@@ -3,6 +3,10 @@
  *
  * Renders educational images at their designated positions.
  * Uses position coordinates from image-positions.ts to match backend FFmpeg rendering.
+ *
+ * Supports two image URL sources:
+ * 1. presignedUrl from ImageConfig (for server-hosted images)
+ * 2. previewUrls map (for local blob URLs from uploads)
  */
 
 import { RenderLayer, RendererConfig, SegmentData } from "../types";
@@ -14,6 +18,15 @@ export class ImageOverlayLayer implements RenderLayer {
 
     private loadedImages: Map<string, HTMLImageElement> = new Map();
     private currentImages: ImageConfig[] = [];
+    private previewUrls: Map<string, string> = new Map();
+
+    /**
+     * Set the preview URLs map for local blob URLs
+     * Call this before prepare() when using locally uploaded images
+     */
+    setPreviewUrls(urls: Map<string, string>): void {
+        this.previewUrls = urls;
+    }
 
     async prepare(segment: SegmentData, config: RendererConfig): Promise<void> {
         const images = segment.line.images ?? [];
@@ -34,14 +47,24 @@ export class ImageOverlayLayer implements RenderLayer {
     }
 
     private getImageKey(img: ImageConfig): string {
-        // Use presignedUrl if available, otherwise filename
-        return img.presignedUrl ?? img.filename;
+        // Use filename as key since that's what previewUrls map uses
+        return img.filename;
+    }
+
+    private getImageUrl(img: ImageConfig): string | null {
+        // Priority: local preview URL > presignedUrl > filename
+        const localUrl = this.previewUrls.get(img.filename);
+        if (localUrl) return localUrl;
+
+        if (img.presignedUrl) return img.presignedUrl;
+
+        return null;
     }
 
     private loadImage(img: ImageConfig): Promise<void> {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             const key = this.getImageKey(img);
-            const url = img.presignedUrl ?? img.filename;
+            const url = this.getImageUrl(img);
 
             if (!url) {
                 resolve();
@@ -90,8 +113,17 @@ export class ImageOverlayLayer implements RenderLayer {
         }
     }
 
+    /**
+     * Clear cached images to force reload
+     * Useful when preview URLs change
+     */
+    clearCache(): void {
+        this.loadedImages.clear();
+    }
+
     dispose(): void {
         this.loadedImages.clear();
         this.currentImages = [];
+        this.previewUrls = new Map();
     }
 }
