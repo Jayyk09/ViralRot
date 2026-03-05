@@ -18,12 +18,6 @@ interface PlacingImage {
     file: File;
     previewUrl: string;
     lineIdx: number;
-    /** If repositioning, the index of the image being repositioned */
-    repositioningIdx?: number;
-    /** Initial position when repositioning */
-    initialX?: number;
-    initialY?: number;
-    initialWidth?: number;
 }
 
 export function Editor({ transcript }: EditorProps) {
@@ -73,62 +67,25 @@ export function Editor({ transcript }: EditorProps) {
         e.target.value = "";
     }, []);
 
-    // Handle clicking an existing image to reposition it
-    const handleRepositionImage = useCallback((lineIdx: number, imageIdx: number, config: ImageConfig) => {
-        // Get the file from the editor's image files
-        const file = editor.state.imageFiles.get(config.filename);
-        const previewUrl = editor.state.imagePreviewUrls.get(config.filename);
-        
-        if (!file || !previewUrl) {
-            console.error("Could not find file for repositioning:", config.filename);
-            return;
-        }
-
-        // Enter placement mode with the existing image
-        setPlacingImage({
-            file,
-            previewUrl,
-            lineIdx,
-            repositioningIdx: imageIdx,
-            initialX: config.x,
-            initialY: config.y,
-            initialWidth: config.width,
-        });
-    }, [editor.state.imageFiles, editor.state.imagePreviewUrls]);
+    // Handle updating an existing image (position/size)
+    const handleUpdateImage = useCallback((lineIdx: number, imageIdx: number, updates: Partial<ImageConfig>) => {
+        editor.updateImageConfig(lineIdx, imageIdx, updates);
+    }, [editor]);
 
     // Handle delete image
     const handleDeleteImage = useCallback((lineIdx: number, imageIdx: number) => {
         editor.removeImage(lineIdx, imageIdx);
     }, [editor]);
 
-    // Handle image placement confirmed
-    const handleImagePlaced = useCallback((
-        lineIdx: number, 
-        file: File, 
-        x: number, 
-        y: number, 
-        width: number,
-        repositioningIdx?: number
-    ) => {
-        // If repositioning, update the existing image config
-        if (repositioningIdx !== undefined) {
-            editor.updateImageConfig(lineIdx, repositioningIdx, { x, y, width });
-        } else {
-            // New image
-            editor.addImageToLine(lineIdx, file, x, y, width);
-        }
-        
-        // Exit placement mode (don't revoke URL if repositioning - it's still in use)
-        if (placingImage?.previewUrl && repositioningIdx === undefined) {
-            // Don't revoke - the editor now owns this URL
-        }
+    // Handle new image placement confirmed
+    const handleImagePlaced = useCallback((lineIdx: number, file: File, x: number, y: number, width: number) => {
+        editor.addImageToLine(lineIdx, file, x, y, width);
         setPlacingImage(null);
-    }, [editor, placingImage]);
+    }, [editor]);
 
     // Handle image placement cancelled
     const handleImagePlacementCancelled = useCallback(() => {
-        // If it was a new image (not repositioning), revoke the preview URL
-        if (placingImage?.previewUrl && placingImage.repositioningIdx === undefined) {
+        if (placingImage?.previewUrl) {
             URL.revokeObjectURL(placingImage.previewUrl);
         }
         setPlacingImage(null);
@@ -180,7 +137,7 @@ export function Editor({ transcript }: EditorProps) {
                         placingImage={placingImage}
                         onImagePlaced={handleImagePlaced}
                         onImagePlacementCancelled={handleImagePlacementCancelled}
-                        onRepositionImage={handleRepositionImage}
+                        onUpdateImage={handleUpdateImage}
                         onDeleteImage={handleDeleteImage}
                         className="h-full aspect-[9/16]"
                     />
