@@ -3,15 +3,18 @@
 /**
  * ExistingImagesOverlay
  * 
- * Overlay that shows draggable existing images on the canvas.
- * Drag to reposition, X button to delete. 
+ * Overlay that shows draggable/resizable images on the canvas.
+ * - Drag image to reposition
+ * - Drag corners to resize
+ * - X button to delete
+ * 
  * Position/size changes are debounced to avoid excessive updates.
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { ImageConfig } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { X, ZoomIn, ZoomOut } from "lucide-react";
+import { X } from "lucide-react";
 
 // Canvas dimensions (9:16 aspect ratio)
 const CANVAS_WIDTH = 1080;
@@ -19,6 +22,10 @@ const CANVAS_HEIGHT = 1920;
 
 // Debounce delay in ms
 const DEBOUNCE_MS = 300;
+
+// Minimum image size
+const MIN_WIDTH = 80;
+const MAX_WIDTH = 900;
 
 interface ExistingImagesOverlayProps {
     /** Images for the current line */
@@ -63,6 +70,8 @@ export function ExistingImagesOverlay({
     );
 }
 
+type ResizeHandle = "nw" | "ne" | "sw" | "se" | null;
+
 interface DraggableImageProps {
     image: ImageConfig;
     previewUrl?: string;
@@ -74,22 +83,37 @@ interface DraggableImageProps {
 function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }: DraggableImageProps) {
     const url = previewUrl || image.presignedUrl;
     const [isDragging, setIsDragging] = useState(false);
+    const [isResizing, setIsResizing] = useState<ResizeHandle>(null);
     const [isHovered, setIsHovered] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const [localPosition, setLocalPosition] = useState({ x: image.x, y: image.y });
     const [localWidth, setLocalWidth] = useState(image.width);
+    const [imageAspect, setImageAspect] = useState(1);
+    
+    // Store initial state when starting resize
+    const resizeStartRef = useRef({ x: 0, y: 0, width: 0, mouseX: 0, mouseY: 0 });
     
     // Refs for debouncing
     const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const pendingUpdatesRef = useRef<Partial<ImageConfig>>({});
-    
-    // Sync with prop changes (only when not dragging)
+
+    // Load image aspect ratio
     useEffect(() => {
-        if (!isDragging) {
+        if (!url) return;
+        const img = new Image();
+        img.onload = () => {
+            setImageAspect(img.width / img.height);
+        };
+        img.src = url;
+    }, [url]);
+    
+    // Sync with prop changes (only when not interacting)
+    useEffect(() => {
+        if (!isDragging && !isResizing) {
             setLocalPosition({ x: image.x, y: image.y });
             setLocalWidth(image.width);
         }
-    }, [image.x, image.y, image.width, isDragging]);
+    }, [image.x, image.y, image.width, isDragging, isResizing]);
 
     // Cleanup debounce timer on unmount
     useEffect(() => {
@@ -100,32 +124,15 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
         };
     }, []);
 
-    // Debounced update function
-    const debouncedUpdate = useCallback((updates: Partial<ImageConfig>) => {
-        // Merge with any pending updates
-        pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
-        
-        // Clear existing timer
-        if (debounceTimerRef.current) {
-            clearTimeout(debounceTimerRef.current);
-        }
-        
-        // Set new timer
-        debounceTimerRef.current = setTimeout(() => {
-            onUpdate(pendingUpdatesRef.current);
-            pendingUpdatesRef.current = {};
-            debounceTimerRef.current = null;
-        }, DEBOUNCE_MS);
-    }, [onUpdate]);
-
     // Flush pending updates immediately
-    const flushUpdates = useCallback(() => {
+    const flushUpdates = useCallback((additionalUpdates?: Partial<ImageConfig>) => {
         if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = null;
         }
-        if (Object.keys(pendingUpdatesRef.current).length > 0) {
-            onUpdate(pendingUpdatesRef.current);
+        const updates = { ...pendingUpdatesRef.current, ...additionalUpdates };
+        if (Object.keys(updates).length > 0) {
+            onUpdate(updates);
             pendingUpdatesRef.current = {};
         }
     }, [onUpdate]);
@@ -144,6 +151,7 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
         };
     }, [containerRef]);
 
+    // --- Drag handlers ---
     const handleMouseDown = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -157,27 +165,110 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
     }, [localPosition, screenToCanvas]);
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
-        if (!isDragging) return;
-        
-        const canvasPos = screenToCanvas(e.clientX, e.clientY);
-        const newX = Math.max(0, Math.min(CANVAS_WIDTH - localWidth, canvasPos.x - dragOffset.x));
-        const newY = Math.max(0, Math.min(CANVAS_HEIGHT - 100, canvasPos.y - dragOffset.y));
-        
-        setLocalPosition({ x: newX, y: newY });
-    }, [isDragging, dragOffset, screenToCanvas, localWidth]);
+        if (isDragging) {
+            const canvasPos = screenToCanvas(e.clientX, e.clientY);
+            const newX = Math.max(0, Math.min(CANVAS_WIDTH - localWidth, canvasPos.x - dragOffset.x));
+            const newY = Math.max(0, Math.min(CANVAS_HEIGHT - 100, canvasPos.y - dragOffset.y));
+            setLocalPosition({ x: newX, y: newY });
+        } else if (isResizing) {
+            const canvasPos = screenToCanvas(e.clientX, e.clientY);
+            const start = resizeStartRef.current;
+            
+            // Calculate delta from start position
+            const deltaX = canvasPos.x - start.mouseX;
+            const deltaY = canvasPos.y - start.mouseY;
+            
+            let newWidth = start.width;
+            let newX = start.x;
+            let newY = start.y;
+            
+            // Resize based on which handle is being dragged
+            // Maintain aspect ratio by using the larger delta
+            const aspectDeltaFromX = Math.abs(deltaX);
+            const aspectDeltaFromY = Math.abs(deltaY) * imageAspect;
+            const useDeltaX = aspectDeltaFromX >= aspectDeltaFromY;
+            
+            switch (isResizing) {
+                case "se": // Bottom-right: grow/shrink, position stays
+                    if (useDeltaX) {
+                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + deltaX));
+                    } else {
+                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + deltaY * imageAspect));
+                    }
+                    break;
+                case "sw": // Bottom-left: width changes, x moves opposite
+                    if (useDeltaX) {
+                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width - deltaX));
+                        newX = start.x + (start.width - newWidth);
+                    } else {
+                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + deltaY * imageAspect));
+                        newX = start.x - (newWidth - start.width);
+                    }
+                    break;
+                case "ne": // Top-right: width changes, y moves opposite  
+                    if (useDeltaX) {
+                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + deltaX));
+                        const heightDelta = (newWidth - start.width) / imageAspect;
+                        newY = start.y - heightDelta;
+                    } else {
+                        const heightDelta = -deltaY;
+                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + heightDelta * imageAspect));
+                        newY = start.y + deltaY;
+                    }
+                    break;
+                case "nw": // Top-left: both position and size change
+                    if (useDeltaX) {
+                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width - deltaX));
+                        newX = start.x + (start.width - newWidth);
+                        const heightDelta = (newWidth - start.width) / imageAspect;
+                        newY = start.y - heightDelta;
+                    } else {
+                        const heightDelta = -deltaY;
+                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + heightDelta * imageAspect));
+                        newX = start.x - (newWidth - start.width);
+                        newY = start.y + deltaY;
+                    }
+                    break;
+            }
+            
+            // Clamp position
+            newX = Math.max(0, Math.min(CANVAS_WIDTH - newWidth, newX));
+            newY = Math.max(0, newY);
+            
+            setLocalPosition({ x: newX, y: newY });
+            setLocalWidth(newWidth);
+        }
+    }, [isDragging, isResizing, dragOffset, screenToCanvas, localWidth, imageAspect]);
 
     const handleMouseUp = useCallback(() => {
-        if (isDragging) {
-            // Commit the position change immediately on mouse up
-            flushUpdates();
-            onUpdate({ x: localPosition.x, y: localPosition.y });
+        if (isDragging || isResizing) {
+            // Commit all changes
+            flushUpdates({ x: localPosition.x, y: localPosition.y, width: localWidth });
         }
         setIsDragging(false);
-    }, [isDragging, localPosition, onUpdate, flushUpdates]);
+        setIsResizing(null);
+    }, [isDragging, isResizing, localPosition, localWidth, flushUpdates]);
 
-    // Global mouse events for dragging
+    // --- Resize handle handlers ---
+    const handleResizeStart = useCallback((e: React.MouseEvent, handle: ResizeHandle) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const canvasPos = screenToCanvas(e.clientX, e.clientY);
+        resizeStartRef.current = {
+            x: localPosition.x,
+            y: localPosition.y,
+            width: localWidth,
+            mouseX: canvasPos.x,
+            mouseY: canvasPos.y,
+        };
+        
+        setIsResizing(handle);
+    }, [localPosition, localWidth, screenToCanvas]);
+
+    // Global mouse events
     useEffect(() => {
-        if (isDragging) {
+        if (isDragging || isResizing) {
             window.addEventListener("mousemove", handleMouseMove);
             window.addEventListener("mouseup", handleMouseUp);
             return () => {
@@ -185,23 +276,19 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
                 window.removeEventListener("mouseup", handleMouseUp);
             };
         }
-    }, [isDragging, handleMouseMove, handleMouseUp]);
-
-    const handleResize = useCallback((delta: number) => {
-        const newWidth = Math.max(100, Math.min(900, localWidth + delta));
-        setLocalWidth(newWidth);
-        debouncedUpdate({ width: newWidth });
-    }, [localWidth, debouncedUpdate]);
+    }, [isDragging, isResizing, handleMouseMove, handleMouseUp]);
     
     if (!url) return null;
 
-    const showControls = isHovered || isDragging;
+    const showControls = isHovered || isDragging || isResizing;
+    const isInteracting = isDragging || isResizing;
 
     return (
         <div
             className={cn(
                 "absolute pointer-events-auto",
-                isDragging ? "cursor-grabbing z-20" : "cursor-grab z-10"
+                isInteracting ? "z-20" : "z-10",
+                isDragging ? "cursor-grabbing" : "cursor-grab"
             )}
             style={{
                 left: `${(localPosition.x / CANVAS_WIDTH) * 100}%`,
@@ -209,7 +296,7 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
                 width: `${(localWidth / CANVAS_WIDTH) * 100}%`,
             }}
             onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => !isDragging && setIsHovered(false)}
+            onMouseLeave={() => !isInteracting && setIsHovered(false)}
             onMouseDown={handleMouseDown}
         >
             <div className="relative w-full">
@@ -217,8 +304,8 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
                     src={url}
                     alt=""
                     className={cn(
-                        "w-full h-auto rounded transition-all",
-                        showControls ? "ring-2 ring-primary shadow-xl" : "hover:ring-2 hover:ring-white/50"
+                        "w-full h-auto rounded",
+                        showControls ? "ring-2 ring-primary shadow-xl" : ""
                     )}
                     draggable={false}
                 />
@@ -227,48 +314,44 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
-                        flushUpdates(); // Flush any pending updates before delete
+                        flushUpdates();
                         onDelete();
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     className={cn(
-                        "absolute -top-2 -left-2 p-1 rounded-full bg-red-500 hover:bg-red-600 transition-all shadow-lg",
-                        showControls ? "opacity-100 scale-100" : "opacity-0 scale-75"
+                        "absolute -top-2 -left-2 p-1 rounded-full bg-red-500 hover:bg-red-600 transition-all shadow-lg z-10",
+                        showControls ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
                     )}
                     title="Delete image"
                 >
                     <X className="w-3 h-3 text-white" />
                 </button>
 
-                {/* Resize controls - bottom right */}
-                <div
-                    className={cn(
-                        "absolute -bottom-2 -right-2 flex items-center gap-0.5 bg-black/80 rounded-full px-1 py-0.5 transition-all shadow-lg",
-                        showControls ? "opacity-100 scale-100" : "opacity-0 scale-75"
-                    )}
-                    onMouseDown={(e) => e.stopPropagation()}
-                >
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            handleResize(-50);
-                        }}
-                        className="p-0.5 hover:bg-white/20 rounded-full transition-colors"
-                        title="Smaller"
-                    >
-                        <ZoomOut className="w-3 h-3 text-white" />
-                    </button>
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            handleResize(50);
-                        }}
-                        className="p-0.5 hover:bg-white/20 rounded-full transition-colors"
-                        title="Larger"
-                    >
-                        <ZoomIn className="w-3 h-3 text-white" />
-                    </button>
-                </div>
+                {/* Resize handles - corners */}
+                {showControls && (
+                    <>
+                        {/* Top-left */}
+                        <div
+                            className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm cursor-nw-resize shadow"
+                            onMouseDown={(e) => handleResizeStart(e, "nw")}
+                        />
+                        {/* Top-right */}
+                        <div
+                            className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm cursor-ne-resize shadow"
+                            onMouseDown={(e) => handleResizeStart(e, "ne")}
+                        />
+                        {/* Bottom-left */}
+                        <div
+                            className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm cursor-sw-resize shadow"
+                            onMouseDown={(e) => handleResizeStart(e, "sw")}
+                        />
+                        {/* Bottom-right */}
+                        <div
+                            className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm cursor-se-resize shadow"
+                            onMouseDown={(e) => handleResizeStart(e, "se")}
+                        />
+                    </>
+                )}
             </div>
         </div>
     );
