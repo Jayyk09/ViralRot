@@ -9,6 +9,7 @@ import { EditorHeader } from "@/components/ui/create-video-header";
 import { CanvasPreview } from "./CanvasPreview";
 import { DialogueList } from "./DialogueList";
 import { EditorFooter } from "./EditorFooter";
+import { ImageUploadModal } from "./ImageUploadModal";
 
 interface EditorProps {
     transcript: TranscriptResult;
@@ -19,6 +20,8 @@ export function Editor({ transcript }: EditorProps) {
     const [selectedVideo, setSelectedVideo] = useState<BackgroundUrl | null>(null);
     const [selectedLineIdx, setSelectedLineIdx] = useState(0);
     const [captionMode, setCaptionMode] = useState<CaptionMode>("box");
+    const [uploadModalOpen, setUploadModalOpen] = useState(false);
+    const [uploadLineIdx, setUploadLineIdx] = useState<number>(0);
 
     const editor = useImageEditor(transcript);
     const lines = editor.state.transcript.dialogue?.dialogue ?? [];
@@ -31,6 +34,15 @@ export function Editor({ transcript }: EditorProps) {
             })
             .catch(console.error);
     }, []);
+
+    const handleOpenUploadModal = (lineIdx: number) => {
+        setUploadLineIdx(lineIdx);
+        setUploadModalOpen(true);
+    };
+
+    const handleImageUpload = (lineIdx: number, file: File, x: number, y: number, width: number) => {
+        editor.addImageToLine(lineIdx, file, x, y, width);
+    };
 
     return (
         <div className="flex flex-col h-screen bg-background overflow-hidden">
@@ -53,6 +65,7 @@ export function Editor({ transcript }: EditorProps) {
                         setSelectedLineIdx={setSelectedLineIdx}
                         captionMode={captionMode}
                         onCaptionModeChange={setCaptionMode}
+                        onUploadLine={handleOpenUploadModal}
                     />
                 </div>
 
@@ -75,6 +88,15 @@ export function Editor({ transcript }: EditorProps) {
                 lines={lines}
                 selectedLineIdx={selectedLineIdx}
                 onSelectLine={setSelectedLineIdx}
+            />
+
+            {/* Image Upload Modal */}
+            <ImageUploadModal
+                open={uploadModalOpen}
+                onOpenChange={setUploadModalOpen}
+                lineIdx={uploadLineIdx}
+                speakerName={lines[uploadLineIdx]?.speaker ?? "Speaker"}
+                onUpload={handleImageUpload}
             />
         </div>
     );
