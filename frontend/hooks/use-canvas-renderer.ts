@@ -64,10 +64,11 @@ export function useCanvasRenderer(
     const imageLayerRef = useRef<ImageOverlayLayer | null>(null);
 
     const [currentSegmentIdx, setCurrentSegmentIdxState] = useState(initialSegmentIdx);
-    const [isPlaying, setIsPlaying] = useState(autoplay);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isPlaying, setIsPlaying] = useState(false); // Start paused until ready
+    const [isLoading, setIsLoading] = useState(true);
     const [currentTime, setCurrentTime] = useState(0);
     const [segments, setSegments] = useState<SegmentData[]>([]);
+    const [isInitialized, setIsInitialized] = useState(false);
 
     // Compute segments from lines
     useEffect(() => {
@@ -75,16 +76,16 @@ export function useCanvasRenderer(
         setSegments(computedSegments);
     }, [lines]);
 
-    // Initialize renderer
+    // Initialize renderer (only once when canvas is available)
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas || isInitialized) return;
 
         // Create renderer
         const renderer = new CanvasRenderer(canvas);
 
-        // Create and add layers
-        const videoLayer = new VideoLayer(videoUrl);
+        // Create and add layers (without video URL - will set later)
+        const videoLayer = new VideoLayer();
         const imageLayer = new ImageOverlayLayer();
         const captionLayer = new CaptionLayer();
 
@@ -106,14 +107,17 @@ export function useCanvasRenderer(
             setCurrentTime(event.data as number);
         });
 
+        setIsInitialized(true);
+
         // Cleanup
         return () => {
             renderer.dispose();
             rendererRef.current = null;
             videoLayerRef.current = null;
             imageLayerRef.current = null;
+            setIsInitialized(false);
         };
-    }, []); // Only run once on mount
+    }, [isInitialized]);
 
     // Update video URL when it changes
     useEffect(() => {
@@ -126,15 +130,19 @@ export function useCanvasRenderer(
     useEffect(() => {
         if (imageLayerRef.current && previewUrls) {
             imageLayerRef.current.setPreviewUrls(previewUrls);
-            // Clear cache to force reload with new URLs
             imageLayerRef.current.clearCache();
         }
     }, [previewUrls]);
 
-    // Handle segment changes
+    // Handle segment changes - this is the main driver
     useEffect(() => {
         const renderer = rendererRef.current;
-        if (!renderer || lines.length === 0) return;
+        const videoLayer = videoLayerRef.current;
+        
+        // Wait for everything to be ready
+        if (!renderer || !isInitialized || lines.length === 0 || segments.length === 0) {
+            return;
+        }
 
         const idx = Math.min(currentSegmentIdx, lines.length - 1);
         const line = lines[idx];
@@ -142,13 +150,23 @@ export function useCanvasRenderer(
 
         if (!line || !segment) return;
 
-        // Set segment and optionally start playing
+        // Set video URL if available (in case it wasn't set during init)
+        if (videoLayer && videoUrl) {
+            videoLayer.setVideoUrl(videoUrl);
+        }
+
+        // Set segment and start playing
+        setIsLoading(true);
         renderer.setSegment(line, idx, segment.startTime).then(() => {
+            setIsLoading(false);
             if (autoplay) {
                 renderer.play();
             }
+        }).catch((err) => {
+            console.error("Error setting segment:", err);
+            setIsLoading(false);
         });
-    }, [currentSegmentIdx, lines, segments, autoplay]);
+    }, [currentSegmentIdx, lines, segments, videoUrl, autoplay, isInitialized]);
 
     // Playback controls
     const togglePlayback = useCallback(() => {

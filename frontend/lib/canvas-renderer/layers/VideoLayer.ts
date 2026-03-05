@@ -14,6 +14,7 @@ export class VideoLayer implements RenderLayer {
     private video: HTMLVideoElement;
     private videoUrl: string = "";
     private isReady: boolean = false;
+    private loadPromise: Promise<void> | null = null;
 
     constructor(videoUrl?: string) {
         // Create hidden video element
@@ -32,39 +33,41 @@ export class VideoLayer implements RenderLayer {
     }
 
     /**
-     * Set the video source URL
+     * Set the video source URL and load it
      */
     setVideoUrl(url: string): void {
-        if (url !== this.videoUrl) {
+        if (url && url !== this.videoUrl) {
             this.videoUrl = url;
             this.isReady = false;
+            // Start loading immediately
+            this.loadVideo();
         }
     }
 
-    async prepare(segment: SegmentData, config: RendererConfig): Promise<void> {
-        // If no URL set, nothing to prepare
+    /**
+     * Load the video and return a promise
+     */
+    private loadVideo(): Promise<void> {
         if (!this.videoUrl) {
             this.isReady = false;
-            return;
+            return Promise.resolve();
         }
 
-        // If URL hasn't changed and video is ready, no need to reload
-        if (this.video.src === this.videoUrl && this.isReady) {
-            // Just ensure video is playing
-            await this.ensurePlaying();
-            return;
+        // If already loading this URL, return existing promise
+        if (this.loadPromise && this.video.src.includes(this.videoUrl)) {
+            return this.loadPromise;
         }
 
-        // Load new video
-        return new Promise((resolve, reject) => {
+        this.loadPromise = new Promise((resolve, reject) => {
             const onLoadedData = () => {
                 this.isReady = true;
                 cleanup();
-                this.ensurePlaying().then(resolve).catch(reject);
+                this.ensurePlaying().then(resolve).catch(resolve); // Don't reject on play failure
             };
 
-            const onError = () => {
+            const onError = (e: Event) => {
                 cleanup();
+                console.error("Video load error:", e);
                 reject(new Error(`Failed to load video: ${this.videoUrl}`));
             };
 
@@ -79,10 +82,29 @@ export class VideoLayer implements RenderLayer {
             this.video.src = this.videoUrl;
             this.video.load();
         });
+
+        return this.loadPromise;
+    }
+
+    async prepare(segment: SegmentData, config: RendererConfig): Promise<void> {
+        // If no URL set, nothing to prepare
+        if (!this.videoUrl) {
+            this.isReady = false;
+            return;
+        }
+
+        // If video is already loaded and ready, just ensure it's playing
+        if (this.isReady && this.video.readyState >= 2) {
+            await this.ensurePlaying();
+            return;
+        }
+
+        // Load the video
+        await this.loadVideo();
     }
 
     private async ensurePlaying(): Promise<void> {
-        if (this.video.paused) {
+        if (this.video.paused && this.isReady) {
             try {
                 await this.video.play();
             } catch (err) {
@@ -144,10 +166,18 @@ export class VideoLayer implements RenderLayer {
         this.ensurePlaying();
     }
 
+    /**
+     * Check if video is ready
+     */
+    getIsReady(): boolean {
+        return this.isReady;
+    }
+
     dispose(): void {
         this.video.pause();
         this.video.src = "";
         this.video.load();
         this.isReady = false;
+        this.loadPromise = null;
     }
 }
