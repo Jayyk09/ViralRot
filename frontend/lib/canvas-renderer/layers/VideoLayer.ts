@@ -22,7 +22,9 @@ export class VideoLayer implements RenderLayer {
         this.video.muted = true;
         this.video.loop = true;
         this.video.playsInline = true;
-        this.video.crossOrigin = "anonymous";
+        // Note: crossOrigin can cause issues with some video sources
+        // Only set if needed for canvas tainted origin
+        // this.video.crossOrigin = "anonymous";
 
         // Prevent video from appearing in DOM
         this.video.style.display = "none";
@@ -36,6 +38,7 @@ export class VideoLayer implements RenderLayer {
      * Set the video source URL and load it
      */
     setVideoUrl(url: string): void {
+        console.log("[VideoLayer] setVideoUrl called:", url);
         if (url && url !== this.videoUrl) {
             this.videoUrl = url;
             this.isReady = false;
@@ -53,6 +56,8 @@ export class VideoLayer implements RenderLayer {
             return Promise.resolve();
         }
 
+        console.log("[VideoLayer] Loading video:", this.videoUrl);
+
         // If already loading this URL, return existing promise
         if (this.loadPromise && this.video.src.includes(this.videoUrl)) {
             return this.loadPromise;
@@ -60,6 +65,7 @@ export class VideoLayer implements RenderLayer {
 
         this.loadPromise = new Promise((resolve, reject) => {
             const onLoadedData = () => {
+                console.log("[VideoLayer] Video loaded successfully");
                 this.isReady = true;
                 cleanup();
                 this.ensurePlaying().then(resolve).catch(resolve); // Don't reject on play failure
@@ -67,7 +73,7 @@ export class VideoLayer implements RenderLayer {
 
             const onError = (e: Event) => {
                 cleanup();
-                console.error("Video load error:", e);
+                console.error("[VideoLayer] Video load error:", e, this.video.error);
                 reject(new Error(`Failed to load video: ${this.videoUrl}`));
             };
 
@@ -123,6 +129,16 @@ export class VideoLayer implements RenderLayer {
             // Video not ready - fill with dark background
             ctx.fillStyle = "#1a1a2e";
             ctx.fillRect(0, 0, config.width, config.height);
+            
+            // Debug: show loading state
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "24px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(
+                this.videoUrl ? "Loading video..." : "No video URL",
+                config.width / 2,
+                config.height / 2
+            );
             return;
         }
 
