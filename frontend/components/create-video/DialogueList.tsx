@@ -21,6 +21,7 @@ export function DialogueList({
         lines,
         selectedLineIdx,
         setSelectedLineIdx,
+        onUploadLine,
 }: DialogueListProps) {
 
 
