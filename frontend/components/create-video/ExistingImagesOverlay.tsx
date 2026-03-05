@@ -4,7 +4,8 @@
  * ExistingImagesOverlay
  * 
  * Overlay that shows draggable existing images on the canvas.
- * Drag to reposition, X button to delete. Changes apply immediately.
+ * Drag to reposition, X button to delete. 
+ * Position/size changes are debounced to avoid excessive updates.
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -15,6 +16,9 @@ import { X, ZoomIn, ZoomOut } from "lucide-react";
 // Canvas dimensions (9:16 aspect ratio)
 const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1920;
+
+// Debounce delay in ms
+const DEBOUNCE_MS = 300;
 
 interface ExistingImagesOverlayProps {
     /** Images for the current line */
@@ -75,13 +79,56 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
     const [localPosition, setLocalPosition] = useState({ x: image.x, y: image.y });
     const [localWidth, setLocalWidth] = useState(image.width);
     
-    // Sync with prop changes
+    // Refs for debouncing
+    const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const pendingUpdatesRef = useRef<Partial<ImageConfig>>({});
+    
+    // Sync with prop changes (only when not dragging)
     useEffect(() => {
         if (!isDragging) {
             setLocalPosition({ x: image.x, y: image.y });
             setLocalWidth(image.width);
         }
     }, [image.x, image.y, image.width, isDragging]);
+
+    // Cleanup debounce timer on unmount
+    useEffect(() => {
+        return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+        };
+    }, []);
+
+    // Debounced update function
+    const debouncedUpdate = useCallback((updates: Partial<ImageConfig>) => {
+        // Merge with any pending updates
+        pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
+        
+        // Clear existing timer
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+        }
+        
+        // Set new timer
+        debounceTimerRef.current = setTimeout(() => {
+            onUpdate(pendingUpdatesRef.current);
+            pendingUpdatesRef.current = {};
+            debounceTimerRef.current = null;
+        }, DEBOUNCE_MS);
+    }, [onUpdate]);
+
+    // Flush pending updates immediately
+    const flushUpdates = useCallback(() => {
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
+        }
+        if (Object.keys(pendingUpdatesRef.current).length > 0) {
+            onUpdate(pendingUpdatesRef.current);
+            pendingUpdatesRef.current = {};
+        }
+    }, [onUpdate]);
 
     const screenToCanvas = useCallback((clientX: number, clientY: number) => {
         const container = containerRef.current;
@@ -121,11 +168,12 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
 
     const handleMouseUp = useCallback(() => {
         if (isDragging) {
-            // Commit the position change
+            // Commit the position change immediately on mouse up
+            flushUpdates();
             onUpdate({ x: localPosition.x, y: localPosition.y });
         }
         setIsDragging(false);
-    }, [isDragging, localPosition, onUpdate]);
+    }, [isDragging, localPosition, onUpdate, flushUpdates]);
 
     // Global mouse events for dragging
     useEffect(() => {
@@ -142,8 +190,8 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
     const handleResize = useCallback((delta: number) => {
         const newWidth = Math.max(100, Math.min(900, localWidth + delta));
         setLocalWidth(newWidth);
-        onUpdate({ width: newWidth });
-    }, [localWidth, onUpdate]);
+        debouncedUpdate({ width: newWidth });
+    }, [localWidth, debouncedUpdate]);
     
     if (!url) return null;
 
@@ -179,6 +227,7 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
+                        flushUpdates(); // Flush any pending updates before delete
                         onDelete();
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
