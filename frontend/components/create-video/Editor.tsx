@@ -7,7 +7,6 @@ import { useImageEditor } from "@/hooks/use-image-editor";
 import { EditorHeader } from "@/components/ui/create-video-header";
 import { CanvasPreview } from "./CanvasPreview";
 import { DialogueList } from "./DialogueList";
-import { PropertiesPanel } from "./PropertiesPanel";
 import { EditorFooter } from "./EditorFooter";
 
 interface EditorProps {
@@ -18,11 +17,6 @@ export function Editor({ transcript }: EditorProps) {
     const [videoOptions, setVideoOptions] = useState<BackgroundUrls | null>(null);
     const [selectedVideo, setSelectedVideo] = useState<BackgroundUrl | null>(null);
     const [selectedLineIdx, setSelectedLineIdx] = useState(0);
-
-    // Global voice/speed/pitch settings
-    const [voice, setVoice] = useState("en_us_peter_v2");
-    const [speed, setSpeed] = useState(1.0);
-    const [pitch, setPitch] = useState(1.0);
 
     const editor = useImageEditor(transcript);
     const lines = editor.state.transcript.dialogue?.dialogue ?? [];
@@ -58,36 +52,16 @@ export function Editor({ transcript }: EditorProps) {
                     />
                 </div>
 
-                {/* Right: Preview + Properties */}
-                <div className="flex flex-col flex-1 min-h-0">
-                    {/* Preview panel - Canvas-based rendering */}
-                    <div className="flex-1 min-h-0 relative overflow-hidden p-4 bg-muted/20">
-                        <CanvasPreview
-                            videoUrl={selectedVideo?.url ?? ""}
-                            lines={lines}
-                            selectedLineIdx={selectedLineIdx}
-                            onSegmentChange={setSelectedLineIdx}
-                            previewUrls={editor.state.imagePreviewUrls}
-                            className="w-full h-full"
-                        />
-                    </div>
-
-                    {/* Properties panel */}
-                    <div className="shrink-0 border-t border-border/60">
-                        <div className="px-4 py-2 border-b border-border/40">
-                            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                Properties
-                            </span>
-                        </div>
-                        <PropertiesPanel
-                            voice={voice}
-                            speed={speed}
-                            pitch={pitch}
-                            onVoiceChange={setVoice}
-                            onSpeedChange={setSpeed}
-                            onPitchChange={setPitch}
-                        />
-                    </div>
+                {/* Right: Preview panel - Canvas-based rendering */}
+                <div className="flex-1 min-h-0 relative overflow-hidden p-4 bg-muted/20">
+                    <CanvasPreview
+                        videoUrl={selectedVideo?.url ?? ""}
+                        lines={lines}
+                        selectedLineIdx={selectedLineIdx}
+                        onSegmentChange={setSelectedLineIdx}
+                        previewUrls={editor.state.imagePreviewUrls}
+                        className="w-full h-full"
+                    />
                 </div>
             </div>
 
