@@ -77,14 +77,16 @@ export function Editor({ transcript }: EditorProps) {
         editor.removeImage(lineIdx, imageIdx);
     }, [editor]);
 
-    // Handle new image placement confirmed
-    const handleImagePlaced = useCallback((lineIdx: number, file: File, x: number, y: number, width: number) => {
-        editor.addImageToLine(lineIdx, file, x, y, width);
+    // Handle new image placement (auto-called with default position)
+    const handleImagePlaced = useCallback((x: number, y: number, width: number) => {
+        if (!placingImage) return;
+        editor.addImageToLine(placingImage.lineIdx, placingImage.file, x, y, width);
+        // Don't revoke URL here - it's now managed by the editor's imagePreviewUrls
         setPlacingImage(null);
-    }, [editor]);
+    }, [editor, placingImage]);
 
-    // Handle image placement cancelled
-    const handleImagePlacementCancelled = useCallback(() => {
+    // Handle image placement cancelled (X button on new image)
+    const handleCancelPlacement = useCallback(() => {
         if (placingImage?.previewUrl) {
             URL.revokeObjectURL(placingImage.previewUrl);
         }
@@ -136,7 +138,7 @@ export function Editor({ transcript }: EditorProps) {
                         captionMode={captionMode}
                         placingImage={placingImage}
                         onImagePlaced={handleImagePlaced}
-                        onImagePlacementCancelled={handleImagePlacementCancelled}
+                        onCancelPlacement={handleCancelPlacement}
                         onUpdateImage={handleUpdateImage}
                         onDeleteImage={handleDeleteImage}
                         className="h-full aspect-[9/16]"
