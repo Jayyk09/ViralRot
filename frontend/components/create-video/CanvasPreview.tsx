@@ -11,14 +11,22 @@
  * - Educational images at correct positions
  * - Styled captions (speaker colors, text wrapping)
  * - Segment-based preview (shows selected dialogue line)
+ * - Interactive image placement mode
  */
 
 import { useEffect } from "react";
 import { DialogueLine } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useCanvasRenderer } from "@/hooks/use-canvas-renderer";
+import { ImagePlacementOverlay } from "./ImagePlacementOverlay";
 import { Play, Pause, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+interface PlacingImage {
+    file: File;
+    previewUrl: string;
+    lineIdx: number;
+}
 
 interface CanvasPreviewProps {
     /** URL of the background video */
@@ -33,6 +41,12 @@ interface CanvasPreviewProps {
     previewUrls?: Map<string, string>;
     /** Caption rendering mode */
     captionMode?: CaptionMode;
+    /** Image currently being placed (if any) */
+    placingImage?: PlacingImage | null;
+    /** Callback when image placement is confirmed */
+    onImagePlaced?: (lineIdx: number, file: File, x: number, y: number, width: number) => void;
+    /** Callback when image placement is cancelled */
+    onImagePlacementCancelled?: () => void;
     /** Additional class names */
     className?: string;
 }
@@ -44,6 +58,9 @@ export function CanvasPreview({
     onSegmentChange,
     previewUrls,
     captionMode = "box",
+    placingImage,
+    onImagePlaced,
+    onImagePlacementCancelled,
     className,
 }: CanvasPreviewProps) {
     const {
@@ -70,6 +87,16 @@ export function CanvasPreview({
         }
     }, [selectedLineIdx, currentSegmentIdx, setCurrentSegmentIdx]);
 
+    const handleImageConfirm = (x: number, y: number, width: number) => {
+        if (placingImage && onImagePlaced) {
+            onImagePlaced(placingImage.lineIdx, placingImage.file, x, y, width);
+        }
+    };
+
+    const handleImageCancel = () => {
+        onImagePlacementCancelled?.();
+    };
+
     return (
         <div
             className={cn(
@@ -83,37 +110,49 @@ export function CanvasPreview({
                 className="w-full h-full rounded"
             />
 
+            {/* Image Placement Overlay */}
+            {placingImage && (
+                <ImagePlacementOverlay
+                    file={placingImage.file}
+                    previewUrl={placingImage.previewUrl}
+                    onConfirm={handleImageConfirm}
+                    onCancel={handleImageCancel}
+                />
+            )}
+
             {/* Loading Overlay */}
-            {isLoading && (
+            {isLoading && !placingImage && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                     <Loader2 className="w-8 h-8 text-white animate-spin" />
                 </div>
             )}
 
-            {/* Playback Controls */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
-                <button
-                    onClick={togglePlayback}
-                    className="p-2 rounded-full bg-black/60 hover:bg-black/80 transition-colors"
-                    title={isPlaying ? "Pause" : "Play"}
-                >
-                    {isPlaying ? (
-                        <Pause className="w-4 h-4 text-white" />
-                    ) : (
-                        <Play className="w-4 h-4 text-white ml-0.5" />
-                    )}
-                </button>
-            </div>
+            {/* Playback Controls - hidden during placement */}
+            {!placingImage && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
+                    <button
+                        onClick={togglePlayback}
+                        className="p-2 rounded-full bg-black/60 hover:bg-black/80 transition-colors"
+                        title={isPlaying ? "Pause" : "Play"}
+                    >
+                        {isPlaying ? (
+                            <Pause className="w-4 h-4 text-white" />
+                        ) : (
+                            <Play className="w-4 h-4 text-white ml-0.5" />
+                        )}
+                    </button>
+                </div>
+            )}
 
-            {/* Segment Info */}
-            {currentSegment && (
+            {/* Segment Info - hidden during placement */}
+            {currentSegment && !placingImage && (
                 <div className="absolute top-3 left-3 px-2 py-1 rounded bg-black/60 text-white text-xs font-mono">
                     Line {currentSegmentIdx + 1}/{lines.length}
                 </div>
             )}
 
-            {/* Speaker Badge */}
-            {currentSegment && (
+            {/* Speaker Badge - hidden during placement */}
+            {currentSegment && !placingImage && (
                 <div
                     className={cn(
                         "absolute top-3 right-3 px-2 py-1 rounded text-xs font-bold uppercase",

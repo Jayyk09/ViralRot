@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchBackgroundURLs, BackgroundUrl, BackgroundUrls } from "@/lib/api";
 import { TranscriptResult } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
@@ -9,10 +9,15 @@ import { EditorHeader } from "@/components/ui/create-video-header";
 import { CanvasPreview } from "./CanvasPreview";
 import { DialogueList } from "./DialogueList";
 import { EditorFooter } from "./EditorFooter";
-import { ImageUploadModal } from "./ImageUploadModal";
 
 interface EditorProps {
     transcript: TranscriptResult;
+}
+
+interface PlacingImage {
+    file: File;
+    previewUrl: string;
+    lineIdx: number;
 }
 
 export function Editor({ transcript }: EditorProps) {
@@ -20,8 +25,10 @@ export function Editor({ transcript }: EditorProps) {
     const [selectedVideo, setSelectedVideo] = useState<BackgroundUrl | null>(null);
     const [selectedLineIdx, setSelectedLineIdx] = useState(0);
     const [captionMode, setCaptionMode] = useState<CaptionMode>("box");
-    const [uploadModalOpen, setUploadModalOpen] = useState(false);
-    const [uploadLineIdx, setUploadLineIdx] = useState<number>(0);
+    const [placingImage, setPlacingImage] = useState<PlacingImage | null>(null);
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const pendingLineIdxRef = useRef<number>(0);
 
     const editor = useImageEditor(transcript);
     const lines = editor.state.transcript.dialogue?.dialogue ?? [];
@@ -35,17 +42,59 @@ export function Editor({ transcript }: EditorProps) {
             .catch(console.error);
     }, []);
 
-    const handleOpenUploadModal = (lineIdx: number) => {
-        setUploadLineIdx(lineIdx);
-        setUploadModalOpen(true);
-    };
+    // Handle upload button click - opens native file picker
+    const handleUploadClick = useCallback((lineIdx: number) => {
+        pendingLineIdxRef.current = lineIdx;
+        fileInputRef.current?.click();
+    }, []);
 
-    const handleImageUpload = (lineIdx: number, file: File, x: number, y: number, width: number) => {
+    // Handle file selection from native picker
+    const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !file.type.startsWith("image/")) return;
+
+        // Create preview URL and enter placement mode
+        const previewUrl = URL.createObjectURL(file);
+        setPlacingImage({
+            file,
+            previewUrl,
+            lineIdx: pendingLineIdxRef.current,
+        });
+
+        // Reset input so the same file can be selected again
+        e.target.value = "";
+    }, []);
+
+    // Handle image placement confirmed
+    const handleImagePlaced = useCallback((lineIdx: number, file: File, x: number, y: number, width: number) => {
         editor.addImageToLine(lineIdx, file, x, y, width);
-    };
+        
+        // Clean up preview URL and exit placement mode
+        if (placingImage?.previewUrl) {
+            URL.revokeObjectURL(placingImage.previewUrl);
+        }
+        setPlacingImage(null);
+    }, [editor, placingImage]);
+
+    // Handle image placement cancelled
+    const handleImagePlacementCancelled = useCallback(() => {
+        if (placingImage?.previewUrl) {
+            URL.revokeObjectURL(placingImage.previewUrl);
+        }
+        setPlacingImage(null);
+    }, [placingImage]);
 
     return (
         <div className="flex flex-col h-screen bg-background overflow-hidden">
+            {/* Hidden file input */}
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelected}
+                className="hidden"
+            />
+
             {/* Top header bar */}
             {videoOptions && (
                 <EditorHeader
@@ -65,7 +114,7 @@ export function Editor({ transcript }: EditorProps) {
                         setSelectedLineIdx={setSelectedLineIdx}
                         captionMode={captionMode}
                         onCaptionModeChange={setCaptionMode}
-                        onUploadLine={handleOpenUploadModal}
+                        onUploadLine={handleUploadClick}
                     />
                 </div>
 
@@ -78,6 +127,9 @@ export function Editor({ transcript }: EditorProps) {
                         onSegmentChange={setSelectedLineIdx}
                         previewUrls={editor.state.imagePreviewUrls}
                         captionMode={captionMode}
+                        placingImage={placingImage}
+                        onImagePlaced={handleImagePlaced}
+                        onImagePlacementCancelled={handleImagePlacementCancelled}
                         className="h-full aspect-[9/16]"
                     />
                 </div>
@@ -88,16 +140,6 @@ export function Editor({ transcript }: EditorProps) {
                 lines={lines}
                 selectedLineIdx={selectedLineIdx}
                 onSelectLine={setSelectedLineIdx}
-            />
-
-            {/* Image Upload Modal */}
-            <ImageUploadModal
-                open={uploadModalOpen}
-                onOpenChange={setUploadModalOpen}
-                lineIdx={uploadLineIdx}
-                speakerName={lines[uploadLineIdx]?.speaker ?? "Speaker"}
-                backgroundVideoUrl={selectedVideo?.url}
-                onUpload={handleImageUpload}
             />
         </div>
     );
