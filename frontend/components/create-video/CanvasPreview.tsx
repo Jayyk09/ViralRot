@@ -12,11 +12,11 @@
  * - Styled captions (speaker colors, text wrapping)
  * - Segment-based preview (shows selected dialogue line)
  * - Interactive image placement mode
- * - Click existing images to replace/delete
+ * - Click existing images to reposition/delete
  */
 
 import { useEffect } from "react";
-import { DialogueLine } from "@/lib/types";
+import { DialogueLine, ImageConfig } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useCanvasRenderer } from "@/hooks/use-canvas-renderer";
 import { ImagePlacementOverlay } from "./ImagePlacementOverlay";
@@ -28,6 +28,12 @@ interface PlacingImage {
     file: File;
     previewUrl: string;
     lineIdx: number;
+    /** If repositioning, the index of the image being repositioned */
+    repositioningIdx?: number;
+    /** Initial position when repositioning */
+    initialX?: number;
+    initialY?: number;
+    initialWidth?: number;
 }
 
 interface CanvasPreviewProps {
@@ -46,11 +52,11 @@ interface CanvasPreviewProps {
     /** Image currently being placed (if any) */
     placingImage?: PlacingImage | null;
     /** Callback when image placement is confirmed */
-    onImagePlaced?: (lineIdx: number, file: File, x: number, y: number, width: number) => void;
+    onImagePlaced?: (lineIdx: number, file: File, x: number, y: number, width: number, repositioningIdx?: number) => void;
     /** Callback when image placement is cancelled */
     onImagePlacementCancelled?: () => void;
-    /** Callback when user wants to replace an existing image */
-    onReplaceImage?: (lineIdx: number, imageIdx: number) => void;
+    /** Callback when user clicks an image to reposition it */
+    onRepositionImage?: (lineIdx: number, imageIdx: number, config: ImageConfig) => void;
     /** Callback when user wants to delete an existing image */
     onDeleteImage?: (lineIdx: number, imageIdx: number) => void;
     /** Additional class names */
@@ -67,7 +73,7 @@ export function CanvasPreview({
     placingImage,
     onImagePlaced,
     onImagePlacementCancelled,
-    onReplaceImage,
+    onRepositionImage,
     onDeleteImage,
     className,
 }: CanvasPreviewProps) {
@@ -97,7 +103,7 @@ export function CanvasPreview({
 
     const handleImageConfirm = (x: number, y: number, width: number) => {
         if (placingImage && onImagePlaced) {
-            onImagePlaced(placingImage.lineIdx, placingImage.file, x, y, width);
+            onImagePlaced(placingImage.lineIdx, placingImage.file, x, y, width, placingImage.repositioningIdx);
         }
     };
 
@@ -105,8 +111,8 @@ export function CanvasPreview({
         onImagePlacementCancelled?.();
     };
 
-    const handleReplaceImage = (imageIdx: number) => {
-        onReplaceImage?.(selectedLineIdx, imageIdx);
+    const handleRepositionImage = (imageIdx: number, config: ImageConfig) => {
+        onRepositionImage?.(selectedLineIdx, imageIdx, config);
     };
 
     const handleDeleteImage = (imageIdx: number) => {
@@ -116,6 +122,11 @@ export function CanvasPreview({
     // Get current line's images
     const currentLine = lines[selectedLineIdx];
     const currentImages = currentLine?.images ?? [];
+
+    // When repositioning, hide that image from the existing overlay
+    const visibleImages = placingImage?.repositioningIdx !== undefined
+        ? currentImages.filter((_, idx) => idx !== placingImage.repositioningIdx)
+        : currentImages;
 
     return (
         <div
@@ -130,12 +141,12 @@ export function CanvasPreview({
                 className="w-full h-full rounded"
             />
 
-            {/* Existing Images Overlay - for replace/delete */}
-            {!placingImage && currentImages.length > 0 && previewUrls && (
+            {/* Existing Images Overlay - for reposition/delete */}
+            {!placingImage && visibleImages.length > 0 && previewUrls && (
                 <ExistingImagesOverlay
-                    images={currentImages}
+                    images={visibleImages}
                     previewUrls={previewUrls}
-                    onReplace={handleReplaceImage}
+                    onRepositionImage={handleRepositionImage}
                     onDelete={handleDeleteImage}
                 />
             )}
@@ -145,6 +156,9 @@ export function CanvasPreview({
                 <ImagePlacementOverlay
                     file={placingImage.file}
                     previewUrl={placingImage.previewUrl}
+                    initialX={placingImage.initialX}
+                    initialY={placingImage.initialY}
+                    initialWidth={placingImage.initialWidth}
                     onConfirm={handleImageConfirm}
                     onCancel={handleImageCancel}
                 />

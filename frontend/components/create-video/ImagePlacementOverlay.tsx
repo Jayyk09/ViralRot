@@ -195,6 +195,18 @@ export function ImagePlacementOverlay({
                     className="w-full h-auto rounded pointer-events-none"
                     draggable={false}
                 />
+                
+                {/* Delete button - top left corner, always visible */}
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onCancel();
+                    }}
+                    className="absolute -top-2 -left-2 p-1 rounded-full bg-red-500 hover:bg-red-600 transition-colors shadow-lg"
+                    title="Cancel (Esc)"
+                >
+                    <X className="w-3 h-3 text-white" />
+                </button>
             </div>
 
             {/* Control buttons */}

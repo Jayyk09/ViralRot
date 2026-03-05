@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchBackgroundURLs, BackgroundUrl, BackgroundUrls } from "@/lib/api";
-import { TranscriptResult } from "@/lib/types";
+import { TranscriptResult, ImageConfig } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useImageEditor } from "@/hooks/use-image-editor";
 import { EditorHeader } from "@/components/ui/create-video-header";
@@ -18,6 +18,12 @@ interface PlacingImage {
     file: File;
     previewUrl: string;
     lineIdx: number;
+    /** If repositioning, the index of the image being repositioned */
+    repositioningIdx?: number;
+    /** Initial position when repositioning */
+    initialX?: number;
+    initialY?: number;
+    initialWidth?: number;
 }
 
 export function Editor({ transcript }: EditorProps) {
@@ -29,7 +35,6 @@ export function Editor({ transcript }: EditorProps) {
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pendingLineIdxRef = useRef<number>(0);
-    const replacingImageIdxRef = useRef<number | null>(null);
 
     const editor = useImageEditor(transcript);
     const lines = editor.state.transcript.dialogue?.dialogue ?? [];
@@ -46,21 +51,8 @@ export function Editor({ transcript }: EditorProps) {
     // Handle upload button click - opens native file picker
     const handleUploadClick = useCallback((lineIdx: number) => {
         pendingLineIdxRef.current = lineIdx;
-        replacingImageIdxRef.current = null;
         fileInputRef.current?.click();
     }, []);
-
-    // Handle replace image click - opens file picker for replacement
-    const handleReplaceImage = useCallback((lineIdx: number, imageIdx: number) => {
-        pendingLineIdxRef.current = lineIdx;
-        replacingImageIdxRef.current = imageIdx;
-        fileInputRef.current?.click();
-    }, []);
-
-    // Handle delete image
-    const handleDeleteImage = useCallback((lineIdx: number, imageIdx: number) => {
-        editor.removeImage(lineIdx, imageIdx);
-    }, [editor]);
 
     // Handle file selection from native picker
     const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,12 +60,6 @@ export function Editor({ transcript }: EditorProps) {
         if (!file || !file.type.startsWith("image/")) return;
 
         const lineIdx = pendingLineIdxRef.current;
-        const replacingIdx = replacingImageIdxRef.current;
-
-        // If replacing, delete the old image first
-        if (replacingIdx !== null) {
-            editor.removeImage(lineIdx, replacingIdx);
-        }
 
         // Create preview URL and enter placement mode
         const previewUrl = URL.createObjectURL(file);
@@ -85,27 +71,67 @@ export function Editor({ transcript }: EditorProps) {
 
         // Reset input so the same file can be selected again
         e.target.value = "";
+    }, []);
+
+    // Handle clicking an existing image to reposition it
+    const handleRepositionImage = useCallback((lineIdx: number, imageIdx: number, config: ImageConfig) => {
+        // Get the file from the editor's image files
+        const file = editor.state.imageFiles.get(config.filename);
+        const previewUrl = editor.state.imagePreviewUrls.get(config.filename);
+        
+        if (!file || !previewUrl) {
+            console.error("Could not find file for repositioning:", config.filename);
+            return;
+        }
+
+        // Enter placement mode with the existing image
+        setPlacingImage({
+            file,
+            previewUrl,
+            lineIdx,
+            repositioningIdx: imageIdx,
+            initialX: config.x,
+            initialY: config.y,
+            initialWidth: config.width,
+        });
+    }, [editor.state.imageFiles, editor.state.imagePreviewUrls]);
+
+    // Handle delete image
+    const handleDeleteImage = useCallback((lineIdx: number, imageIdx: number) => {
+        editor.removeImage(lineIdx, imageIdx);
     }, [editor]);
 
     // Handle image placement confirmed
-    const handleImagePlaced = useCallback((lineIdx: number, file: File, x: number, y: number, width: number) => {
-        editor.addImageToLine(lineIdx, file, x, y, width);
+    const handleImagePlaced = useCallback((
+        lineIdx: number, 
+        file: File, 
+        x: number, 
+        y: number, 
+        width: number,
+        repositioningIdx?: number
+    ) => {
+        // If repositioning, update the existing image config
+        if (repositioningIdx !== undefined) {
+            editor.updateImageConfig(lineIdx, repositioningIdx, { x, y, width });
+        } else {
+            // New image
+            editor.addImageToLine(lineIdx, file, x, y, width);
+        }
         
-        // Clean up preview URL and exit placement mode
-        if (placingImage?.previewUrl) {
-            URL.revokeObjectURL(placingImage.previewUrl);
+        // Exit placement mode (don't revoke URL if repositioning - it's still in use)
+        if (placingImage?.previewUrl && repositioningIdx === undefined) {
+            // Don't revoke - the editor now owns this URL
         }
         setPlacingImage(null);
-        replacingImageIdxRef.current = null;
     }, [editor, placingImage]);
 
     // Handle image placement cancelled
     const handleImagePlacementCancelled = useCallback(() => {
-        if (placingImage?.previewUrl) {
+        // If it was a new image (not repositioning), revoke the preview URL
+        if (placingImage?.previewUrl && placingImage.repositioningIdx === undefined) {
             URL.revokeObjectURL(placingImage.previewUrl);
         }
         setPlacingImage(null);
-        replacingImageIdxRef.current = null;
     }, [placingImage]);
 
     return (
@@ -154,7 +180,7 @@ export function Editor({ transcript }: EditorProps) {
                         placingImage={placingImage}
                         onImagePlaced={handleImagePlaced}
                         onImagePlacementCancelled={handleImagePlacementCancelled}
-                        onReplaceImage={handleReplaceImage}
+                        onRepositionImage={handleRepositionImage}
                         onDeleteImage={handleDeleteImage}
                         className="h-full aspect-[9/16]"
                     />
