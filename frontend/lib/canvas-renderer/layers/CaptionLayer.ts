@@ -9,7 +9,6 @@ import {
     RenderLayer,
     RendererConfig,
     SegmentData,
-    CaptionStyle,
     SPEAKER_CAPTION_STYLES,
 } from "../types";
 import { Speaker } from "@/lib/types";
