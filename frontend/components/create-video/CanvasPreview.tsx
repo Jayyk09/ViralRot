@@ -11,23 +11,20 @@
  * - Educational images at correct positions
  * - Styled captions (speaker colors, text wrapping)
  * - Segment-based preview (shows selected dialogue line)
- * - Drag existing images to reposition (instant)
- * - Interactive image placement for new uploads
+ * - Unified image editing: drag to move, corner handles to resize, X to delete
  */
 
 import { useEffect } from "react";
 import { DialogueLine, ImageConfig } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useCanvasRenderer } from "@/hooks/use-canvas-renderer";
-import { ImagePlacementOverlay } from "./ImagePlacementOverlay";
-import { ExistingImagesOverlay } from "./ExistingImagesOverlay";
+import { ImageOverlayEditor } from "./ImageOverlayEditor";
 import { Play, Pause, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PlacingImage {
     file: File;
     previewUrl: string;
-    lineIdx: number;
 }
 
 interface CanvasPreviewProps {
@@ -45,10 +42,10 @@ interface CanvasPreviewProps {
     captionMode?: CaptionMode;
     /** Image currently being placed (if any) */
     placingImage?: PlacingImage | null;
-    /** Callback when image placement is confirmed */
-    onImagePlaced?: (lineIdx: number, file: File, x: number, y: number, width: number) => void;
+    /** Callback when image placement is confirmed (auto-called with default position) */
+    onImagePlaced?: (x: number, y: number, width: number) => void;
     /** Callback when image placement is cancelled */
-    onImagePlacementCancelled?: () => void;
+    onCancelPlacement?: () => void;
     /** Callback when an existing image is updated (position/size) */
     onUpdateImage?: (lineIdx: number, imageIdx: number, updates: Partial<ImageConfig>) => void;
     /** Callback when user wants to delete an existing image */
@@ -66,7 +63,7 @@ export function CanvasPreview({
     captionMode = "box",
     placingImage,
     onImagePlaced,
-    onImagePlacementCancelled,
+    onCancelPlacement,
     onUpdateImage,
     onDeleteImage,
     className,
@@ -95,14 +92,8 @@ export function CanvasPreview({
         }
     }, [selectedLineIdx, currentSegmentIdx, setCurrentSegmentIdx]);
 
-    const handleImageConfirm = (x: number, y: number, width: number) => {
-        if (placingImage && onImagePlaced) {
-            onImagePlaced(placingImage.lineIdx, placingImage.file, x, y, width);
-        }
-    };
-
-    const handleImageCancel = () => {
-        onImagePlacementCancelled?.();
+    const handleImagePlaced = (x: number, y: number, width: number) => {
+        onImagePlaced?.(x, y, width);
     };
 
     const handleUpdateImage = (imageIdx: number, updates: Partial<ImageConfig>) => {
@@ -130,59 +121,50 @@ export function CanvasPreview({
                 className="w-full h-full rounded"
             />
 
-            {/* Existing Images Overlay - draggable with delete */}
-            {!placingImage && currentImages.length > 0 && previewUrls && (
-                <ExistingImagesOverlay
+            {/* Image Overlay Editor - handles both new and existing images */}
+            {previewUrls && (currentImages.length > 0 || placingImage) && (
+                <ImageOverlayEditor
                     images={currentImages}
                     previewUrls={previewUrls}
+                    placingImage={placingImage}
+                    onImagePlaced={handleImagePlaced}
                     onUpdateImage={handleUpdateImage}
-                    onDelete={handleDeleteImage}
-                />
-            )}
-
-            {/* Image Placement Overlay - for new uploads */}
-            {placingImage && (
-                <ImagePlacementOverlay
-                    file={placingImage.file}
-                    previewUrl={placingImage.previewUrl}
-                    onConfirm={handleImageConfirm}
-                    onCancel={handleImageCancel}
+                    onDeleteImage={handleDeleteImage}
+                    onCancelPlacement={onCancelPlacement}
                 />
             )}
 
             {/* Loading Overlay */}
-            {isLoading && !placingImage && (
+            {isLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                     <Loader2 className="w-8 h-8 text-white animate-spin" />
                 </div>
             )}
 
-            {/* Playback Controls - hidden during placement */}
-            {!placingImage && (
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
-                    <button
-                        onClick={togglePlayback}
-                        className="p-2 rounded-full bg-black/60 hover:bg-black/80 transition-colors"
-                        title={isPlaying ? "Pause" : "Play"}
-                    >
-                        {isPlaying ? (
-                            <Pause className="w-4 h-4 text-white" />
-                        ) : (
-                            <Play className="w-4 h-4 text-white ml-0.5" />
-                        )}
-                    </button>
-                </div>
-            )}
+            {/* Playback Controls */}
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
+                <button
+                    onClick={togglePlayback}
+                    className="p-2 rounded-full bg-black/60 hover:bg-black/80 transition-colors"
+                    title={isPlaying ? "Pause" : "Play"}
+                >
+                    {isPlaying ? (
+                        <Pause className="w-4 h-4 text-white" />
+                    ) : (
+                        <Play className="w-4 h-4 text-white ml-0.5" />
+                    )}
+                </button>
+            </div>
 
-            {/* Segment Info - hidden during placement */}
-            {currentSegment && !placingImage && (
+            {/* Segment Info */}
+            {currentSegment && (
                 <div className="absolute top-3 left-3 px-2 py-1 rounded bg-black/60 text-white text-xs font-mono">
                     Line {currentSegmentIdx + 1}/{lines.length}
                 </div>
             )}
 
-            {/* Speaker Badge - hidden during placement */}
-            {currentSegment && !placingImage && (
+            {/* Speaker Badge */}
+            {currentSegment && (
                 <div
                     className={cn(
                         "absolute top-3 right-3 px-2 py-1 rounded text-xs font-bold uppercase",
