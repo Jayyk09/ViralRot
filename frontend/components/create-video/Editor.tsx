@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { fetchBackgroundURLs, BackgroundUrl, BackgroundUrls } from "@/lib/api";
 import { TranscriptResult } from "@/lib/types";
+import { CaptionMode } from "@/lib/canvas-renderer";
 import { useImageEditor } from "@/hooks/use-image-editor";
 import { EditorHeader } from "@/components/ui/create-video-header";
 import { CanvasPreview } from "./CanvasPreview";
@@ -17,6 +18,7 @@ export function Editor({ transcript }: EditorProps) {
     const [videoOptions, setVideoOptions] = useState<BackgroundUrls | null>(null);
     const [selectedVideo, setSelectedVideo] = useState<BackgroundUrl | null>(null);
     const [selectedLineIdx, setSelectedLineIdx] = useState(0);
+    const [captionMode, setCaptionMode] = useState<CaptionMode>("box");
 
     const editor = useImageEditor(transcript);
     const lines = editor.state.transcript.dialogue?.dialogue ?? [];
@@ -60,6 +62,8 @@ export function Editor({ transcript }: EditorProps) {
                         selectedLineIdx={selectedLineIdx}
                         onSegmentChange={setSelectedLineIdx}
                         previewUrls={editor.state.imagePreviewUrls}
+                        captionMode={captionMode}
+                        onCaptionModeChange={setCaptionMode}
                         className="w-full h-full"
                     />
                 </div>

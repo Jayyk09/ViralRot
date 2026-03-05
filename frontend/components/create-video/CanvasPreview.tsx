@@ -11,12 +11,14 @@
  * - Educational images at correct positions
  * - Styled captions (speaker colors, text wrapping)
  * - Segment-based preview (shows selected dialogue line)
+ * - Caption mode toggle (box vs karaoke)
  */
 
 import { useEffect, useRef } from "react";
 import { DialogueLine } from "@/lib/types";
+import { CaptionMode } from "@/lib/canvas-renderer";
 import { useCanvasRenderer } from "@/hooks/use-canvas-renderer";
-import { Play, Pause, Loader2 } from "lucide-react";
+import { Play, Pause, Loader2, Type, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CanvasPreviewProps {
@@ -30,6 +32,10 @@ interface CanvasPreviewProps {
     onSegmentChange?: (idx: number) => void;
     /** Preview URLs for local blob images (filename -> blob URL) */
     previewUrls?: Map<string, string>;
+    /** Caption rendering mode */
+    captionMode?: CaptionMode;
+    /** Callback when caption mode changes */
+    onCaptionModeChange?: (mode: CaptionMode) => void;
     /** Additional class names */
     className?: string;
 }
@@ -40,6 +46,8 @@ export function CanvasPreview({
     selectedLineIdx,
     onSegmentChange,
     previewUrls,
+    captionMode = "box",
+    onCaptionModeChange,
     className,
 }: CanvasPreviewProps) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -58,6 +66,7 @@ export function CanvasPreview({
         initialSegmentIdx: selectedLineIdx,
         autoplay: true,
         previewUrls,
+        captionMode,
     });
 
     // Sync external selectedLineIdx with internal state
@@ -143,6 +152,26 @@ export function CanvasPreview({
                         <Play className="w-4 h-4 text-white ml-0.5" />
                     )}
                 </button>
+                
+                {/* Caption Mode Toggle */}
+                {onCaptionModeChange && (
+                    <button
+                        onClick={() => onCaptionModeChange(captionMode === "box" ? "karaoke" : "box")}
+                        className={cn(
+                            "p-2 rounded-full transition-colors flex items-center gap-1",
+                            captionMode === "karaoke"
+                                ? "bg-yellow-500/80 hover:bg-yellow-500"
+                                : "bg-black/60 hover:bg-black/80"
+                        )}
+                        title={captionMode === "karaoke" ? "Karaoke Mode (click for Box)" : "Box Mode (click for Karaoke)"}
+                    >
+                        {captionMode === "karaoke" ? (
+                            <Sparkles className="w-4 h-4 text-white" />
+                        ) : (
+                            <Type className="w-4 h-4 text-white" />
+                        )}
+                    </button>
+                )}
             </div>
 
             {/* Segment Info */}

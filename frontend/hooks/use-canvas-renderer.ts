@@ -12,6 +12,7 @@ import {
     ImageOverlayLayer,
     CaptionLayer,
     SegmentData,
+    CaptionMode,
 } from "@/lib/canvas-renderer";
 import { DialogueLine } from "@/lib/types";
 
@@ -26,6 +27,8 @@ export interface UseCanvasRendererOptions {
     autoplay?: boolean;
     /** Preview URLs for local blob images (filename -> blob URL) */
     previewUrls?: Map<string, string>;
+    /** Caption rendering mode: "box" or "karaoke" */
+    captionMode?: CaptionMode;
 }
 
 export interface UseCanvasRendererReturn {
@@ -56,7 +59,7 @@ export interface UseCanvasRendererReturn {
 export function useCanvasRenderer(
     options: UseCanvasRendererOptions,
 ): UseCanvasRendererReturn {
-    const { videoUrl, lines, initialSegmentIdx = 0, autoplay = true, previewUrls } = options;
+    const { videoUrl, lines, initialSegmentIdx = 0, autoplay = true, previewUrls, captionMode = "box" } = options;
 
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const rendererRef = useRef<CanvasRenderer | null>(null);
@@ -146,6 +149,26 @@ export function useCanvasRenderer(
             imageLayerRef.current.clearCache();
         }
     }, [previewUrls]);
+
+    // Update caption mode when it changes
+    useEffect(() => {
+        const renderer = rendererRef.current;
+        if (!renderer) return;
+
+        // Update config
+        renderer.updateConfig({ captionMode });
+
+        // Re-prepare current segment if we have one, so captions re-render with new mode
+        if (lines.length > 0 && segments.length > 0) {
+            const idx = Math.min(currentSegmentIdx, lines.length - 1);
+            const line = lines[idx];
+            const segment = segments[idx];
+            
+            if (line && segment) {
+                renderer.setSegment(line, idx, segment.startTime);
+            }
+        }
+    }, [captionMode]); // Only re-run when captionMode changes
 
     // Handle segment changes - this is the main driver
     useEffect(() => {

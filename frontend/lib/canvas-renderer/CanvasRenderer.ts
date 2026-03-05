@@ -299,6 +299,14 @@ export class CanvasRenderer {
         return { ...this.config };
     }
 
+    /**
+     * Update renderer configuration.
+     * Changes take effect on next segment load or render.
+     */
+    updateConfig(config: Partial<RendererConfig>): void {
+        this.config = { ...this.config, ...config };
+    }
+
     // ============ Cleanup ============
 
     /**
