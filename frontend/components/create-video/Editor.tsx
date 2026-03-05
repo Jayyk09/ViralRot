@@ -29,6 +29,7 @@ export function Editor({ transcript }: EditorProps) {
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pendingLineIdxRef = useRef<number>(0);
+    const replacingImageIdxRef = useRef<number | null>(null);
 
     const editor = useImageEditor(transcript);
     const lines = editor.state.transcript.dialogue?.dialogue ?? [];
@@ -45,25 +46,46 @@ export function Editor({ transcript }: EditorProps) {
     // Handle upload button click - opens native file picker
     const handleUploadClick = useCallback((lineIdx: number) => {
         pendingLineIdxRef.current = lineIdx;
+        replacingImageIdxRef.current = null;
         fileInputRef.current?.click();
     }, []);
+
+    // Handle replace image click - opens file picker for replacement
+    const handleReplaceImage = useCallback((lineIdx: number, imageIdx: number) => {
+        pendingLineIdxRef.current = lineIdx;
+        replacingImageIdxRef.current = imageIdx;
+        fileInputRef.current?.click();
+    }, []);
+
+    // Handle delete image
+    const handleDeleteImage = useCallback((lineIdx: number, imageIdx: number) => {
+        editor.removeImage(lineIdx, imageIdx);
+    }, [editor]);
 
     // Handle file selection from native picker
     const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !file.type.startsWith("image/")) return;
 
+        const lineIdx = pendingLineIdxRef.current;
+        const replacingIdx = replacingImageIdxRef.current;
+
+        // If replacing, delete the old image first
+        if (replacingIdx !== null) {
+            editor.removeImage(lineIdx, replacingIdx);
+        }
+
         // Create preview URL and enter placement mode
         const previewUrl = URL.createObjectURL(file);
         setPlacingImage({
             file,
             previewUrl,
-            lineIdx: pendingLineIdxRef.current,
+            lineIdx,
         });
 
         // Reset input so the same file can be selected again
         e.target.value = "";
-    }, []);
+    }, [editor]);
 
     // Handle image placement confirmed
     const handleImagePlaced = useCallback((lineIdx: number, file: File, x: number, y: number, width: number) => {
@@ -74,6 +96,7 @@ export function Editor({ transcript }: EditorProps) {
             URL.revokeObjectURL(placingImage.previewUrl);
         }
         setPlacingImage(null);
+        replacingImageIdxRef.current = null;
     }, [editor, placingImage]);
 
     // Handle image placement cancelled
@@ -82,6 +105,7 @@ export function Editor({ transcript }: EditorProps) {
             URL.revokeObjectURL(placingImage.previewUrl);
         }
         setPlacingImage(null);
+        replacingImageIdxRef.current = null;
     }, [placingImage]);
 
     return (
@@ -130,6 +154,8 @@ export function Editor({ transcript }: EditorProps) {
                         placingImage={placingImage}
                         onImagePlaced={handleImagePlaced}
                         onImagePlacementCancelled={handleImagePlacementCancelled}
+                        onReplaceImage={handleReplaceImage}
+                        onDeleteImage={handleDeleteImage}
                         className="h-full aspect-[9/16]"
                     />
                 </div>

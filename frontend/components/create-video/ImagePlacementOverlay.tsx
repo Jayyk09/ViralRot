@@ -6,6 +6,9 @@
  * Overlay that sits on top of the canvas preview to allow
  * drag-to-position image placement. Shows a draggable image
  * that the user can position before committing.
+ * 
+ * IMPORTANT: Position (x, y) represents the TOP-LEFT corner of the image,
+ * matching the backend FFmpeg rendering behavior.
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -21,6 +24,10 @@ interface ImagePlacementOverlayProps {
     file: File;
     /** Preview URL for the image */
     previewUrl: string;
+    /** Initial position (for editing existing images) */
+    initialX?: number;
+    initialY?: number;
+    initialWidth?: number;
     /** Callback when placement is confirmed */
     onConfirm: (x: number, y: number, width: number) => void;
     /** Callback when placement is cancelled */
@@ -32,13 +39,19 @@ interface ImagePlacementOverlayProps {
 export function ImagePlacementOverlay({
     file,
     previewUrl,
+    initialX,
+    initialY,
+    initialWidth,
     onConfirm,
     onCancel,
     className,
 }: ImagePlacementOverlayProps) {
-    // Position in canvas coordinates (center of image)
-    const [position, setPosition] = useState({ x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2.5 });
-    const [width, setWidth] = useState(400);
+    // Position in canvas coordinates (TOP-LEFT corner of image)
+    const [position, setPosition] = useState({ 
+        x: initialX ?? (CANVAS_WIDTH / 2 - 200), // Default: centered horizontally
+        y: initialY ?? (CANVAS_HEIGHT / 3),       // Default: upper third
+    });
+    const [width, setWidth] = useState(initialWidth ?? 400);
     const [imageAspect, setImageAspect] = useState(1);
     const [isDragging, setIsDragging] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -75,6 +88,7 @@ export function ImagePlacementOverlay({
         e.stopPropagation();
         setIsDragging(true);
         
+        // Calculate offset from top-left corner of image
         const canvasPos = screenToCanvas(e.clientX, e.clientY);
         setDragOffset({
             x: canvasPos.x - position.x,
@@ -87,27 +101,29 @@ export function ImagePlacementOverlay({
         if (!isDragging) return;
         
         const canvasPos = screenToCanvas(e.clientX, e.clientY);
-        const newX = Math.max(0, Math.min(CANVAS_WIDTH, canvasPos.x - dragOffset.x));
-        const newY = Math.max(0, Math.min(CANVAS_HEIGHT, canvasPos.y - dragOffset.y));
+        const newX = Math.max(0, Math.min(CANVAS_WIDTH - width, canvasPos.x - dragOffset.x));
+        const newY = Math.max(0, Math.min(CANVAS_HEIGHT - (width / imageAspect), canvasPos.y - dragOffset.y));
         
         setPosition({ x: newX, y: newY });
-    }, [isDragging, dragOffset, screenToCanvas]);
+    }, [isDragging, dragOffset, screenToCanvas, width, imageAspect]);
 
     // Handle mouse up to stop dragging
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
     }, []);
 
-    // Handle click on overlay background to place image
+    // Handle click on overlay background to place image (centers image at click point)
     const handleBackgroundClick = useCallback((e: React.MouseEvent) => {
-        // Only handle clicks on the background, not the image
-        if (e.target === containerRef.current) {
+        if (e.target === containerRef.current || (e.target as HTMLElement).dataset.background) {
             const canvasPos = screenToCanvas(e.clientX, e.clientY);
-            setPosition(canvasPos);
+            // Center the image at the click point
+            const newX = Math.max(0, Math.min(CANVAS_WIDTH - width, canvasPos.x - width / 2));
+            const newY = Math.max(0, Math.min(CANVAS_HEIGHT - (width / imageAspect), canvasPos.y - (width / imageAspect) / 2));
+            setPosition({ x: newX, y: newY });
         }
-    }, [screenToCanvas]);
+    }, [screenToCanvas, width, imageAspect]);
 
-    // Handle confirm
+    // Handle confirm - position is already top-left corner
     const handleConfirm = useCallback(() => {
         onConfirm(position.x, position.y, width);
     }, [position, width, onConfirm]);
@@ -139,6 +155,8 @@ export function ImagePlacementOverlay({
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [onCancel, handleConfirm, increaseSize, decreaseSize]);
 
+    const height = width / imageAspect;
+
     return (
         <div
             ref={containerRef}
@@ -153,9 +171,9 @@ export function ImagePlacementOverlay({
             onMouseLeave={handleMouseUp}
         >
             {/* Semi-transparent overlay */}
-            <div className="absolute inset-0 bg-black/20 pointer-events-none" />
+            <div className="absolute inset-0 bg-black/20 pointer-events-none" data-background />
 
-            {/* Draggable image */}
+            {/* Draggable image - positioned by TOP-LEFT corner */}
             <div
                 className={cn(
                     "absolute border-2 rounded transition-shadow pointer-events-auto",
@@ -167,7 +185,7 @@ export function ImagePlacementOverlay({
                     left: `${(position.x / CANVAS_WIDTH) * 100}%`,
                     top: `${(position.y / CANVAS_HEIGHT) * 100}%`,
                     width: `${(width / CANVAS_WIDTH) * 100}%`,
-                    transform: "translate(-50%, -50%)",
+                    // NO transform - position is top-left corner
                 }}
                 onMouseDown={handleMouseDown}
             >
@@ -223,7 +241,7 @@ export function ImagePlacementOverlay({
 
             {/* Position indicator */}
             <div className="absolute top-3 left-3 px-2 py-1 rounded bg-black/70 text-white text-xs font-mono">
-                {position.x}, {position.y}
+                x:{position.x} y:{position.y} ({width}×{Math.round(height)})
             </div>
 
             {/* Instructions */}

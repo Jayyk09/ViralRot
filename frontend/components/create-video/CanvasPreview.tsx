@@ -12,6 +12,7 @@
  * - Styled captions (speaker colors, text wrapping)
  * - Segment-based preview (shows selected dialogue line)
  * - Interactive image placement mode
+ * - Click existing images to replace/delete
  */
 
 import { useEffect } from "react";
@@ -19,6 +20,7 @@ import { DialogueLine } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useCanvasRenderer } from "@/hooks/use-canvas-renderer";
 import { ImagePlacementOverlay } from "./ImagePlacementOverlay";
+import { ExistingImagesOverlay } from "./ExistingImagesOverlay";
 import { Play, Pause, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +49,10 @@ interface CanvasPreviewProps {
     onImagePlaced?: (lineIdx: number, file: File, x: number, y: number, width: number) => void;
     /** Callback when image placement is cancelled */
     onImagePlacementCancelled?: () => void;
+    /** Callback when user wants to replace an existing image */
+    onReplaceImage?: (lineIdx: number, imageIdx: number) => void;
+    /** Callback when user wants to delete an existing image */
+    onDeleteImage?: (lineIdx: number, imageIdx: number) => void;
     /** Additional class names */
     className?: string;
 }
@@ -61,6 +67,8 @@ export function CanvasPreview({
     placingImage,
     onImagePlaced,
     onImagePlacementCancelled,
+    onReplaceImage,
+    onDeleteImage,
     className,
 }: CanvasPreviewProps) {
     const {
@@ -97,6 +105,18 @@ export function CanvasPreview({
         onImagePlacementCancelled?.();
     };
 
+    const handleReplaceImage = (imageIdx: number) => {
+        onReplaceImage?.(selectedLineIdx, imageIdx);
+    };
+
+    const handleDeleteImage = (imageIdx: number) => {
+        onDeleteImage?.(selectedLineIdx, imageIdx);
+    };
+
+    // Get current line's images
+    const currentLine = lines[selectedLineIdx];
+    const currentImages = currentLine?.images ?? [];
+
     return (
         <div
             className={cn(
@@ -109,6 +129,16 @@ export function CanvasPreview({
                 ref={canvasRef}
                 className="w-full h-full rounded"
             />
+
+            {/* Existing Images Overlay - for replace/delete */}
+            {!placingImage && currentImages.length > 0 && previewUrls && (
+                <ExistingImagesOverlay
+                    images={currentImages}
+                    previewUrls={previewUrls}
+                    onReplace={handleReplaceImage}
+                    onDelete={handleDeleteImage}
+                />
+            )}
 
             {/* Image Placement Overlay */}
             {placingImage && (
