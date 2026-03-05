@@ -96,6 +96,7 @@ export function Editor({ transcript }: EditorProps) {
                 onOpenChange={setUploadModalOpen}
                 lineIdx={uploadLineIdx}
                 speakerName={lines[uploadLineIdx]?.speaker ?? "Speaker"}
+                backgroundVideoUrl={selectedVideo?.url}
                 onUpload={handleImageUpload}
             />
         </div>
