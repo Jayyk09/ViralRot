@@ -60,7 +60,7 @@ class AudioService:
                 - duration: Duration of the generated audio in seconds.
         """
         voice_id = VOICE_MAP.get(speaker, VOICE_MAP["PETER"])
-        audio_bytes, duration = generate_audio_from_dialouge(dialogue, voice_id)
+        audio_bytes, duration, _word_timestamps = generate_audio_from_dialouge(dialogue, voice_id)
 
         # Generate storage key
         audio_uuid = uuid4().hex
