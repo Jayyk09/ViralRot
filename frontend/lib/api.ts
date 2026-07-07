@@ -3,6 +3,8 @@ import {
 	SourceType,
 	TranscriptRequest,
 	VideoRequest,
+	AudioRequest,
+	ExportRequest,
 	JobCreatedResponse,
 	ProgressUpdate,
 	VideoApiError,
@@ -107,6 +109,45 @@ export async function generateVideo(
 	}
 
 	const response = await fetchWithRetry(`${API_BASE_URL}/jobs/generate-video`, {
+		method: "POST",
+		body: formData,
+		credentials: "include",
+	});
+
+	return handleResponse<JobCreatedResponse>(response);
+}
+
+export async function generateAudio(
+	request: AudioRequest,
+): Promise<JobCreatedResponse> {
+	const formData = new FormData();
+	formData.append("transcript", request.transcript);
+	formData.append("user_id", String(request.user_id));
+	formData.append("video", request.video);
+
+	const response = await fetchWithRetry(`${API_BASE_URL}/jobs/generate-audio`, {
+		method: "POST",
+		body: formData,
+		credentials: "include",
+	});
+
+	return handleResponse<JobCreatedResponse>(response);
+}
+
+export async function exportVideo(
+	request: ExportRequest,
+): Promise<JobCreatedResponse> {
+	const formData = new FormData();
+	formData.append("user_id", String(request.user_id));
+	formData.append("video", request.video);
+	formData.append("audio_url", request.audio_url);
+	formData.append("line_timings", request.line_timings);
+
+	if (request.karaoke_captions !== undefined) {
+		formData.append("karaoke_captions", String(request.karaoke_captions));
+	}
+
+	const response = await fetchWithRetry(`${API_BASE_URL}/jobs/export-video`, {
 		method: "POST",
 		body: formData,
 		credentials: "include",
