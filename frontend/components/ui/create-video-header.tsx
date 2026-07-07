@@ -8,12 +8,19 @@ import {
         DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { FolderOpen, Settings, Play } from "lucide-react";
+import { FolderOpen, Settings, Play, Download, Loader2 } from "lucide-react";
 
 type EditorHeaderProps = {
         videoOptions: BackgroundUrls;
         selectedVideo: BackgroundUrl;
         onVideoChange: (v: BackgroundUrl) => void;
+        /** Export the current (audio + background, no overlays yet) video - Phase 1 */
+        onExport?: () => void;
+        /** Whether export or audio generation is in progress (disables the button) */
+        isExportDisabled?: boolean;
+        isExporting?: boolean;
+        /** URL of the exported video, once ready */
+        exportUrl?: string | null;
 };
 
 function filenameFromUrl(url: string): string {
@@ -24,6 +31,10 @@ export function EditorHeader({
         videoOptions,
         selectedVideo,
         onVideoChange,
+        onExport,
+        isExportDisabled,
+        isExporting,
+        exportUrl,
 }: EditorHeaderProps) {
         return (
                 <div className="flex items-center gap-3 px-4 h-11 border-b border-border/60 bg-card shrink-0">
@@ -76,6 +87,37 @@ export function EditorHeader({
                                 <Play className="w-3.5 h-3.5 fill-current" />
                                 Preview All
                         </Button>
+
+                        {onExport && (
+                                exportUrl ? (
+                                        <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 gap-1.5 text-xs border-green-500/40 text-green-600"
+                                                asChild
+                                        >
+                                                <a href={exportUrl} target="_blank" rel="noopener noreferrer">
+                                                        <Download className="w-3.5 h-3.5" />
+                                                        Download
+                                                </a>
+                                        </Button>
+                                ) : (
+                                        <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 gap-1.5 text-xs"
+                                                onClick={onExport}
+                                                disabled={isExportDisabled || isExporting}
+                                        >
+                                                {isExporting ? (
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                ) : (
+                                                        <Download className="w-3.5 h-3.5" />
+                                                )}
+                                                {isExporting ? "Exporting..." : "Export"}
+                                        </Button>
+                                )
+                        )}
                 </div>
         );
 }

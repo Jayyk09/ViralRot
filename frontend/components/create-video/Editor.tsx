@@ -5,10 +5,12 @@ import { fetchBackgroundURLs, BackgroundUrl, BackgroundUrls } from "@/lib/api";
 import { TranscriptResult, ImageConfig } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useImageEditor } from "@/hooks/use-image-editor";
+import { useAudioGeneration, useExportVideo } from "@/hooks/use-audio-generation";
 import { EditorHeader } from "@/components/ui/create-video-header";
 import { CanvasPreview } from "./CanvasPreview";
 import { DialogueList } from "./DialogueList";
 import { EditorFooter } from "./EditorFooter";
+import { Loader2 } from "lucide-react";
 
 interface EditorProps {
     transcript: TranscriptResult;
@@ -29,9 +31,13 @@ export function Editor({ transcript }: EditorProps) {
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pendingLineIdxRef = useRef<number>(0);
+    const audioGenStartedRef = useRef(false);
 
     const editor = useImageEditor(transcript);
     const lines = editor.state.transcript.dialogue?.dialogue ?? [];
+
+    const audioGen = useAudioGeneration();
+    const exportGen = useExportVideo();
 
     useEffect(() => {
         fetchBackgroundURLs()
@@ -41,6 +47,36 @@ export function Editor({ transcript }: EditorProps) {
             })
             .catch(console.error);
     }, []);
+
+    // Finalize narration audio + real per-line/per-word timing exactly once,
+    // before any preview/editing happens - the Phase 1 pipeline split. No
+    // further TTS calls happen after this completes; overlay editing (Phase 2)
+    // and export both build on this same finalized audio.
+    useEffect(() => {
+        if (audioGenStartedRef.current) return;
+        if (!selectedVideo || lines.length === 0) return;
+
+        audioGenStartedRef.current = true;
+        audioGen
+            .generate({
+                transcript: editor.getTranscriptJson(),
+                video: selectedVideo.id,
+            })
+            .catch(console.error);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedVideo, lines.length]);
+
+    const handleExport = useCallback(() => {
+        if (!audioGen.audio || !selectedVideo) return;
+        exportGen
+            .start({
+                video: selectedVideo.id,
+                audio_url: audioGen.audio.audio_url,
+                line_timings: JSON.stringify(audioGen.audio.line_timings),
+                karaoke_captions: captionMode === "karaoke",
+            })
+            .catch(console.error);
+    }, [audioGen.audio, selectedVideo, captionMode, exportGen]);
 
     // Handle upload button click - opens native file picker
     const handleUploadClick = useCallback((lineIdx: number) => {
@@ -93,6 +129,8 @@ export function Editor({ transcript }: EditorProps) {
         setPlacingImage(null);
     }, [placingImage]);
 
+    const audio = audioGen.audio;
+
     return (
         <div className="flex flex-col h-screen bg-background overflow-hidden">
             {/* Hidden file input */}
@@ -105,53 +143,76 @@ export function Editor({ transcript }: EditorProps) {
             />
 
             {/* Top header bar */}
-            {videoOptions && (
+            {videoOptions && selectedVideo && (
                 <EditorHeader
                     videoOptions={videoOptions}
                     selectedVideo={selectedVideo}
                     onVideoChange={setSelectedVideo}
+                    onExport={handleExport}
+                    isExportDisabled={!audio}
+                    isExporting={exportGen.isLoading}
+                    exportUrl={exportGen.video?.access_url ?? null}
                 />
             )}
 
-            {/* Main content */}
-            <div className="flex flex-1 min-h-0">
-                {/* Left: Dialogue list */}
-                <div className="border-r border-border/60 flex flex-col flex-1 min-h-0">
-                    <DialogueList
+            {!audio ? (
+                /* Narration must be fully generated before any preview/editing
+                   can happen - real timing only exists once this completes. */
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    <p className="text-sm">
+                        {audioGen.error
+                            ? `Failed to generate audio: ${audioGen.error.message}`
+                            : "Generating narration audio..."}
+                    </p>
+                </div>
+            ) : (
+                <>
+                    {/* Main content */}
+                    <div className="flex flex-1 min-h-0">
+                        {/* Left: Dialogue list */}
+                        <div className="border-r border-border/60 flex flex-col flex-1 min-h-0">
+                            <DialogueList
+                                lines={lines}
+                                selectedLineIdx={selectedLineIdx}
+                                setSelectedLineIdx={setSelectedLineIdx}
+                                captionMode={captionMode}
+                                onCaptionModeChange={setCaptionMode}
+                                onUploadLine={handleUploadClick}
+                            />
+                        </div>
+
+                        {/* Right: Preview panel - Canvas-based rendering */}
+                        <div className="flex-1 min-h-0 relative overflow-hidden p-4 bg-muted/20 flex items-center justify-center">
+                            <CanvasPreview
+                                videoUrl={selectedVideo?.url ?? ""}
+                                lines={lines}
+                                audioUrl={audio.audio_url}
+                                lineTimings={audio.line_timings}
+                                wordTimestamps={audio.word_timestamps}
+                                selectedLineIdx={selectedLineIdx}
+                                onSegmentChange={setSelectedLineIdx}
+                                previewUrls={editor.state.imagePreviewUrls}
+                                captionMode={captionMode}
+                                placingImage={placingImage}
+                                onImagePlaced={handleImagePlaced}
+                                onCancelPlacement={handleCancelPlacement}
+                                onUpdateImage={handleUpdateImage}
+                                onDeleteImage={handleDeleteImage}
+                                className="h-full aspect-[9/16]"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Footer timeline */}
+                    <EditorFooter
                         lines={lines}
                         selectedLineIdx={selectedLineIdx}
-                        setSelectedLineIdx={setSelectedLineIdx}
-                        captionMode={captionMode}
-                        onCaptionModeChange={setCaptionMode}
-                        onUploadLine={handleUploadClick}
+                        onSelectLine={setSelectedLineIdx}
+                        lineTimings={audio.line_timings}
                     />
-                </div>
-
-                {/* Right: Preview panel - Canvas-based rendering */}
-                <div className="flex-1 min-h-0 relative overflow-hidden p-4 bg-muted/20 flex items-center justify-center">
-                    <CanvasPreview
-                        videoUrl={selectedVideo?.url ?? ""}
-                        lines={lines}
-                        selectedLineIdx={selectedLineIdx}
-                        onSegmentChange={setSelectedLineIdx}
-                        previewUrls={editor.state.imagePreviewUrls}
-                        captionMode={captionMode}
-                        placingImage={placingImage}
-                        onImagePlaced={handleImagePlaced}
-                        onCancelPlacement={handleCancelPlacement}
-                        onUpdateImage={handleUpdateImage}
-                        onDeleteImage={handleDeleteImage}
-                        className="h-full aspect-[9/16]"
-                    />
-                </div>
-            </div>
-
-            {/* Footer timeline */}
-            <EditorFooter
-                lines={lines}
-                selectedLineIdx={selectedLineIdx}
-                onSelectLine={setSelectedLineIdx}
-            />
+                </>
+            )}
         </div>
     );
 }

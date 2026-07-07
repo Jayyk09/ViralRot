@@ -1,6 +1,6 @@
 "use client";
 
-import { DialogueLine } from "@/lib/types";
+import { DialogueLine, LineTiming } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Play } from "lucide-react";
 
@@ -8,6 +8,8 @@ interface EditorFooterProps {
     lines: DialogueLine[];
     selectedLineIdx: number;
     onSelectLine: (idx: number) => void;
+    /** Real per-line timings from /jobs/generate-audio - used instead of duration_estimate when present */
+    lineTimings?: LineTiming[];
 }
 
 const DEFAULT_DURATION = 3; // seconds per line when no estimate
@@ -31,8 +33,11 @@ export function EditorFooter({
     lines,
     selectedLineIdx,
     onSelectLine,
+    lineTimings,
 }: EditorFooterProps) {
-    const durations = lines.map((l) => l.duration_estimate ?? DEFAULT_DURATION);
+    const durations = lines.map(
+        (l, idx) => lineTimings?.[idx]?.duration ?? l.duration_estimate ?? DEFAULT_DURATION,
+    );
     const totalDuration = durations.reduce((a, b) => a + b, 0);
 
     return (

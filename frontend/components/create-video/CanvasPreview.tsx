@@ -14,8 +14,8 @@
  * - Unified image editing: drag to move, corner handles to resize, X to delete
  */
 
-import { useEffect } from "react";
-import { DialogueLine, ImageConfig } from "@/lib/types";
+import { useEffect, useRef } from "react";
+import { DialogueLine, ImageConfig, LineTiming, WordTimestamp } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useCanvasRenderer } from "@/hooks/use-canvas-renderer";
 import { ImageOverlayEditor } from "./ImageOverlayEditor";
@@ -32,9 +32,15 @@ interface CanvasPreviewProps {
     videoUrl: string;
     /** All dialogue lines */
     lines: DialogueLine[];
+    /** URL of the finalized narration audio - the master playback clock */
+    audioUrl: string;
+    /** Real per-line timings from /jobs/generate-audio */
+    lineTimings: LineTiming[];
+    /** Real word-level timings from /jobs/generate-audio, if available */
+    wordTimestamps?: WordTimestamp[];
     /** Currently selected line index */
     selectedLineIdx: number;
-    /** Callback when user wants to change segment (optional) */
+    /** Callback fired whenever the actively-playing line changes */
     onSegmentChange?: (idx: number) => void;
     /** Preview URLs for local blob images (filename -> blob URL) */
     previewUrls?: Map<string, string>;
@@ -57,6 +63,9 @@ interface CanvasPreviewProps {
 export function CanvasPreview({
     videoUrl,
     lines,
+    audioUrl,
+    lineTimings,
+    wordTimestamps,
     selectedLineIdx,
     onSegmentChange,
     previewUrls,
@@ -79,18 +88,32 @@ export function CanvasPreview({
     } = useCanvasRenderer({
         videoUrl,
         lines,
+        audioUrl,
+        lineTimings,
+        wordTimestamps,
         initialSegmentIdx: selectedLineIdx,
         autoplay: true,
         previewUrls,
         captionMode,
     });
 
-    // Sync external selectedLineIdx with internal state
+    // Seek playback when the externally-selected line changes (e.g. clicking
+    // a line in the dialogue list or footer timeline)
+    const lastRequestedIdx = useRef(selectedLineIdx);
     useEffect(() => {
-        if (selectedLineIdx !== currentSegmentIdx) {
+        if (selectedLineIdx !== lastRequestedIdx.current) {
+            lastRequestedIdx.current = selectedLineIdx;
             setCurrentSegmentIdx(selectedLineIdx);
         }
-    }, [selectedLineIdx, currentSegmentIdx, setCurrentSegmentIdx]);
+    }, [selectedLineIdx, setCurrentSegmentIdx]);
+
+    // Playback naturally advances through lines - keep the parent's
+    // selected-line state (dialogue list / footer highlighting) in sync
+    useEffect(() => {
+        lastRequestedIdx.current = currentSegmentIdx;
+        onSegmentChange?.(currentSegmentIdx);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentSegmentIdx]);
 
     const handleImagePlaced = (x: number, y: number, width: number) => {
         onImagePlaced?.(x, y, width);
