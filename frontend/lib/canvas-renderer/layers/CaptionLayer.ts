@@ -15,7 +15,7 @@ import {
     SPEAKER_CAPTION_STYLES,
     DEFAULT_KARAOKE_STYLE,
 } from "../types";
-import { Speaker } from "@/lib/types";
+import { Speaker, WordTimestamp } from "@/lib/types";
 
 export class CaptionLayer implements RenderLayer {
     readonly name = "captions";
@@ -24,13 +24,32 @@ export class CaptionLayer implements RenderLayer {
     private currentCaption: string = "";
     private currentSpeaker: Speaker = "PETER";
     private segmentDuration: number = 0;
-    
+
     // Box mode state
     private wrappedLines: string[] = [];
-    
+
     // Karaoke mode state
     private wordTimings: WordTiming[] = [];
     private karaokeChunks: KaraokeChunk[] = [];
+
+    // Real word timings from MiniMax (absolute seconds), grouped by line index.
+    // Falls back to the proportional character-count estimate when empty/missing
+    // for a given line (e.g. the subtitle_file fetch failed for that segment).
+    private absoluteWordsByLine: Map<number, WordTimestamp[]> = new Map();
+
+    /**
+     * Feed real word-level timings from /jobs/generate-audio. Absolute
+     * (full-timeline) seconds - converted to segment-local time in
+     * prepareKaraokeData once the active line is known.
+     */
+    setAbsoluteWordTimestamps(words: WordTimestamp[]): void {
+        this.absoluteWordsByLine = new Map();
+        for (const word of words) {
+            const list = this.absoluteWordsByLine.get(word.line_index) ?? [];
+            list.push(word);
+            this.absoluteWordsByLine.set(word.line_index, list);
+        }
+    }
 
     async prepare(segment: SegmentData, config: RendererConfig): Promise<void> {
         this.currentCaption = segment.line.caption;
@@ -39,7 +58,7 @@ export class CaptionLayer implements RenderLayer {
 
         if (config.captionMode === "karaoke") {
             // Prepare karaoke mode data
-            this.prepareKaraokeData(segment.duration);
+            this.prepareKaraokeData(segment);
         } else {
             // Prepare box mode data
             const style = SPEAKER_CAPTION_STYLES[this.currentSpeaker];
@@ -52,18 +71,30 @@ export class CaptionLayer implements RenderLayer {
 
     /**
      * Prepare karaoke data: calculate word timings and split into chunks.
-     * Matches backend calculate_word_timings() and split_caption_into_chunks().
+     * Uses real MiniMax word timings when available (converted to
+     * segment-local time), falling back to the proportional character-count
+     * estimate matching backend calculate_word_timings() otherwise.
      */
-    private prepareKaraokeData(duration: number): void {
+    private prepareKaraokeData(segment: SegmentData): void {
         const style = DEFAULT_KARAOKE_STYLE;
-        
-        // Calculate word timings (proportional by character count)
-        this.wordTimings = this.calculateWordTimings(
-            this.currentCaption,
-            0,
-            duration,
-        );
-        
+        const absoluteWords = this.absoluteWordsByLine.get(segment.index);
+
+        if (absoluteWords && absoluteWords.length > 0) {
+            this.wordTimings = absoluteWords.map((word) => ({
+                word: word.word,
+                startTime: Math.max(0, word.start - segment.startTime),
+                endTime: Math.max(0, word.end - segment.startTime),
+                duration: Math.max(0.01, word.end - word.start),
+            }));
+        } else {
+            // Fallback: proportional distribution by character count
+            this.wordTimings = this.calculateWordTimings(
+                this.currentCaption,
+                0,
+                segment.duration,
+            );
+        }
+
         // Split into chunks of maxWordsPerLine for display
         this.karaokeChunks = this.splitIntoChunks(
             this.wordTimings,
@@ -407,6 +438,7 @@ export class CaptionLayer implements RenderLayer {
         this.wrappedLines = [];
         this.wordTimings = [];
         this.karaokeChunks = [];
+        this.absoluteWordsByLine = new Map();
     }
 }
 

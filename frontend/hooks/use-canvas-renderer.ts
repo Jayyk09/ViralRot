@@ -2,7 +2,12 @@
  * useCanvasRenderer Hook
  *
  * React hook for managing canvas-based video preview state.
- * Handles renderer lifecycle, segment switching, and playback controls.
+ *
+ * Playback is driven by a single hidden <audio> element playing the
+ * finalized narration - not by switching between per-line "segments" on a
+ * synthetic clock. Line boundaries and captions are derived by looking up
+ * the audio's currentTime against real per-line/per-word timings from
+ * /jobs/generate-audio, so preview timing matches the final render exactly.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -14,16 +19,22 @@ import {
     SegmentData,
     CaptionMode,
 } from "@/lib/canvas-renderer";
-import { DialogueLine } from "@/lib/types";
+import { DialogueLine, LineTiming, WordTimestamp } from "@/lib/types";
 
 export interface UseCanvasRendererOptions {
     /** URL of the background video */
     videoUrl: string;
     /** All dialogue lines for the video */
     lines: DialogueLine[];
-    /** Initial segment index to preview */
+    /** URL of the finalized narration audio - the master clock for playback */
+    audioUrl: string;
+    /** Real per-line timings from /jobs/generate-audio (ground truth, not duration_estimate) */
+    lineTimings: LineTiming[];
+    /** Real word-level timings from /jobs/generate-audio, if MiniMax returned usable data */
+    wordTimestamps?: WordTimestamp[];
+    /** Initial line to seek to on load */
     initialSegmentIdx?: number;
-    /** Whether to autoplay when segment changes */
+    /** Whether to autoplay once the first segment is ready */
     autoplay?: boolean;
     /** Preview URLs for local blob images (filename -> blob URL) */
     previewUrls?: Map<string, string>;
@@ -34,11 +45,11 @@ export interface UseCanvasRendererOptions {
 export interface UseCanvasRendererReturn {
     /** Ref to attach to the canvas element */
     canvasRef: React.RefObject<HTMLCanvasElement | null>;
-    /** Current segment index being previewed */
+    /** Line index currently active on the timeline */
     currentSegmentIdx: number;
-    /** Set the segment to preview */
+    /** Seek playback to the start of this line */
     setCurrentSegmentIdx: (idx: number) => void;
-    /** Whether the renderer is playing */
+    /** Whether the audio is playing */
     isPlaying: boolean;
     /** Toggle play/pause */
     togglePlayback: () => void;
@@ -48,38 +59,81 @@ export interface UseCanvasRendererReturn {
     pause: () => void;
     /** Whether assets are loading */
     isLoading: boolean;
-    /** Current time within segment */
+    /** Current time on the full timeline, in seconds (not segment-local) */
     currentTime: number;
-    /** Current segment data */
+    /** Currently active segment data */
     currentSegment: SegmentData | null;
-    /** All computed segments */
+    /** All computed segments, from real line timings */
     segments: SegmentData[];
 }
 
 export function useCanvasRenderer(
     options: UseCanvasRendererOptions,
 ): UseCanvasRendererReturn {
-    const { videoUrl, lines, initialSegmentIdx = 0, autoplay = true, previewUrls, captionMode = "box" } = options;
+    const {
+        videoUrl,
+        lines,
+        audioUrl,
+        lineTimings,
+        wordTimestamps,
+        initialSegmentIdx = 0,
+        autoplay = true,
+        previewUrls,
+        captionMode = "box",
+    } = options;
 
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
     const rendererRef = useRef<CanvasRenderer | null>(null);
     const videoLayerRef = useRef<VideoLayer | null>(null);
     const imageLayerRef = useRef<ImageOverlayLayer | null>(null);
+    const captionLayerRef = useRef<CaptionLayer | null>(null);
+    const rafRef = useRef<number | null>(null);
+    const preparedIdxRef = useRef<number>(-1);
+    const preparingRef = useRef<boolean>(false);
 
     const [currentSegmentIdx, setCurrentSegmentIdxState] = useState(initialSegmentIdx);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [currentTime, setCurrentTime] = useState(0);
     const [segments, setSegments] = useState<SegmentData[]>([]);
-    
+
     // Track if canvas is mounted - triggers re-render when canvas becomes available
     const [canvasMounted, setCanvasMounted] = useState(false);
 
-    // Compute segments from lines
+    // Create the hidden <audio> master clock once
     useEffect(() => {
-        const computedSegments = CanvasRenderer.computeSegments(lines);
-        setSegments(computedSegments);
-    }, [lines]);
+        const audio = new Audio();
+        audio.preload = "auto";
+        audioRef.current = audio;
+
+        const handlePlay = () => setIsPlaying(true);
+        const handlePause = () => setIsPlaying(false);
+        audio.addEventListener("play", handlePlay);
+        audio.addEventListener("pause", handlePause);
+
+        return () => {
+            audio.removeEventListener("play", handlePlay);
+            audio.removeEventListener("pause", handlePause);
+            audio.pause();
+            audio.src = "";
+            audioRef.current = null;
+        };
+    }, []);
+
+    // Point the audio element at the finalized narration
+    useEffect(() => {
+        const audio = audioRef.current;
+        if (!audio || !audioUrl) return;
+        audio.src = audioUrl;
+        audio.load();
+    }, [audioUrl]);
+
+    // Compute segments from REAL line timings (not duration_estimate)
+    useEffect(() => {
+        setSegments(CanvasRenderer.computeSegmentsFromTimings(lines, lineTimings));
+        preparedIdxRef.current = -1;
+    }, [lines, lineTimings]);
 
     // Check for canvas mount on first render and subsequent renders
     useEffect(() => {
@@ -114,15 +168,7 @@ export function useCanvasRenderer(
         rendererRef.current = renderer;
         videoLayerRef.current = videoLayer;
         imageLayerRef.current = imageLayer;
-
-        // Set up event listeners
-        renderer.on("play", () => setIsPlaying(true));
-        renderer.on("pause", () => setIsPlaying(false));
-        renderer.on("loadStart", () => setIsLoading(true));
-        renderer.on("loadEnd", () => setIsLoading(false));
-        renderer.on("timeUpdate", (event) => {
-            setCurrentTime(event.data as number);
-        });
+        captionLayerRef.current = captionLayer;
 
         // Cleanup
         return () => {
@@ -131,6 +177,7 @@ export function useCanvasRenderer(
             rendererRef.current = null;
             videoLayerRef.current = null;
             imageLayerRef.current = null;
+            captionLayerRef.current = null;
         };
     }, [canvasMounted]);
 
@@ -150,78 +197,129 @@ export function useCanvasRenderer(
         }
     }, [previewUrls]);
 
+    // Feed real word timestamps into the caption layer (grouped by line index)
+    useEffect(() => {
+        captionLayerRef.current?.setAbsoluteWordTimestamps(wordTimestamps ?? []);
+    }, [wordTimestamps]);
+
     // Update caption mode when it changes
     useEffect(() => {
         const renderer = rendererRef.current;
         if (!renderer) return;
-
-        // Update config
         renderer.updateConfig({ captionMode });
+    }, [captionMode]);
 
-        // Re-prepare current segment if we have one, so captions re-render with new mode
-        if (lines.length > 0 && segments.length > 0) {
-            const idx = Math.min(currentSegmentIdx, lines.length - 1);
-            const line = lines[idx];
-            const segment = segments[idx];
-            
-            if (line && segment) {
-                renderer.setSegment(line, idx, segment.startTime);
-            }
-        }
-    }, [captionMode]); // Only re-run when captionMode changes
-
-    // Handle segment changes - this is the main driver
+    // ============ Audio-driven render loop ============
+    // Reads audio.currentTime every frame, resolves the active line against
+    // real timings, re-prepares layers on line change, and paints the frame
+    // at the correct segment-local time. This is the single source of truth
+    // for playback - there is no independent renderer clock anymore.
     useEffect(() => {
         const renderer = rendererRef.current;
-        const videoLayer = videoLayerRef.current;
-        
-        // Wait for everything to be ready
-        if (!renderer || lines.length === 0 || segments.length === 0) {
-            return;
-        }
+        const audio = audioRef.current;
+        if (!renderer || !audio || !canvasMounted || segments.length === 0) return;
 
-        const idx = Math.min(currentSegmentIdx, lines.length - 1);
-        const line = lines[idx];
-        const segment = segments[idx];
+        let cancelled = false;
 
-        if (!line || !segment) return;
-
-        console.log("[useCanvasRenderer] Setting segment:", idx, "videoUrl:", videoUrl);
-
-        // Set video URL if available
-        if (videoLayer && videoUrl) {
-            videoLayer.setVideoUrl(videoUrl);
-        }
-
-        // Set segment and start playing
-        setIsLoading(true);
-        renderer.setSegment(line, idx, segment.startTime).then(() => {
-            setIsLoading(false);
-            if (autoplay) {
-                renderer.play();
+        const findActiveIndex = (t: number): number => {
+            for (let i = 0; i < segments.length; i++) {
+                if (t < segments[i].endTime) return i;
             }
-        }).catch((err) => {
-            console.error("[useCanvasRenderer] Error setting segment:", err);
-            setIsLoading(false);
-        });
-    }, [currentSegmentIdx, lines, segments, videoUrl, autoplay]);
+            return segments.length - 1;
+        };
 
-    // Playback controls
+        const ensureSegmentPrepared = async (idx: number) => {
+            if (preparedIdxRef.current === idx || preparingRef.current) return;
+            const segment = segments[idx];
+            if (!segment) return;
+
+            preparingRef.current = true;
+            setIsLoading(true);
+            try {
+                await renderer.setSegment(segment.line, idx, segment.startTime);
+                if (!cancelled) {
+                    preparedIdxRef.current = idx;
+                    setCurrentSegmentIdxState(idx);
+                }
+            } catch (err) {
+                console.error("[useCanvasRenderer] Failed to prepare segment:", err);
+            } finally {
+                preparingRef.current = false;
+                if (!cancelled) setIsLoading(false);
+            }
+        };
+
+        const tick = () => {
+            const t = audio.currentTime;
+            setCurrentTime(t);
+
+            const activeIdx = findActiveIndex(t);
+            if (activeIdx !== preparedIdxRef.current && !preparingRef.current) {
+                void ensureSegmentPrepared(activeIdx);
+            }
+
+            const paintIdx = preparedIdxRef.current >= 0 ? preparedIdxRef.current : activeIdx;
+            const segment = segments[paintIdx];
+            if (segment) {
+                renderer.seek(t - segment.startTime);
+            }
+
+            rafRef.current = requestAnimationFrame(tick);
+        };
+
+        const startIdx = Math.min(initialSegmentIdx, segments.length - 1);
+        void ensureSegmentPrepared(startIdx).then(() => {
+            if (cancelled) return;
+            rafRef.current = requestAnimationFrame(tick);
+            if (autoplay) {
+                audio.play().catch((err) => {
+                    console.warn("[useCanvasRenderer] Autoplay blocked:", err);
+                });
+            }
+        });
+
+        return () => {
+            cancelled = true;
+            if (rafRef.current !== null) {
+                cancelAnimationFrame(rafRef.current);
+                rafRef.current = null;
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [segments, canvasMounted]);
+
+    // Playback controls - drive the <audio> element directly
     const togglePlayback = useCallback(() => {
-        rendererRef.current?.togglePlayback();
+        const audio = audioRef.current;
+        if (!audio) return;
+        if (audio.paused) {
+            audio.play().catch((err) => console.warn("[useCanvasRenderer] Play blocked:", err));
+        } else {
+            audio.pause();
+        }
     }, []);
 
     const play = useCallback(() => {
-        rendererRef.current?.play();
+        audioRef.current?.play().catch((err) => console.warn("[useCanvasRenderer] Play blocked:", err));
     }, []);
 
     const pause = useCallback(() => {
-        rendererRef.current?.pause();
+        audioRef.current?.pause();
     }, []);
 
-    const setCurrentSegmentIdx = useCallback((idx: number) => {
-        setCurrentSegmentIdxState(Math.max(0, Math.min(idx, lines.length - 1)));
-    }, [lines.length]);
+    // Seek to the start of a given line (not a hard segment switch - the
+    // render loop picks it up on the next tick once the audio time crosses in)
+    const setCurrentSegmentIdx = useCallback(
+        (idx: number) => {
+            const audio = audioRef.current;
+            const clamped = Math.max(0, Math.min(idx, segments.length - 1));
+            const segment = segments[clamped];
+            if (audio && segment) {
+                audio.currentTime = segment.startTime;
+            }
+        },
+        [segments],
+    );
 
     // Current segment data
     const currentSegment = segments[currentSegmentIdx] ?? null;

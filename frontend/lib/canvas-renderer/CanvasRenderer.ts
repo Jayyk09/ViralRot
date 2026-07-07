@@ -18,7 +18,7 @@ import {
     RendererEventCallback,
     RendererEvent,
 } from "./types";
-import { DialogueLine } from "@/lib/types";
+import { DialogueLine, LineTiming } from "@/lib/types";
 
 export class CanvasRenderer {
     private canvas: HTMLCanvasElement;
@@ -146,7 +146,9 @@ export class CanvasRenderer {
     }
 
     /**
-     * Compute segment data from dialogue lines array
+     * Compute segment data from dialogue lines array using each line's
+     * duration_estimate. Only a rough approximation - prefer
+     * computeSegmentsFromTimings once real audio timing is available.
      */
     static computeSegments(lines: DialogueLine[]): SegmentData[] {
         let currentTime = 0;
@@ -161,6 +163,30 @@ export class CanvasRenderer {
             };
             currentTime += duration;
             return segment;
+        });
+    }
+
+    /**
+     * Compute segment data from real per-line timings (from
+     * /jobs/generate-audio, driven by actual TTS audio duration). This is
+     * the ground truth the audio-driven preview clock aligns against -
+     * unlike computeSegments, it matches the final render exactly.
+     */
+    static computeSegmentsFromTimings(
+        lines: DialogueLine[],
+        lineTimings: LineTiming[],
+    ): SegmentData[] {
+        return lines.map((line, index) => {
+            const timing = lineTimings[index];
+            const startTime = timing?.start ?? 0;
+            const endTime = timing?.end ?? startTime;
+            return {
+                line,
+                index,
+                startTime,
+                endTime,
+                duration: Math.max(0.01, endTime - startTime),
+            };
         });
     }
 
