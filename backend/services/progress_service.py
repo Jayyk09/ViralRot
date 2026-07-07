@@ -17,10 +17,11 @@ from pydantic import BaseModel
 import threading
 
 # Type definitions
-JobType = Literal["transcript_generation", "video_generation"]
+JobType = Literal["transcript_generation", "video_generation", "audio_generation"]
 JobStatus = Literal["queued", "processing", "completed", "failed"]
 TranscriptStage = Literal["extracting_content", "generating_dialogue"]
 VideoStage = Literal["preparing_assets", "audio_generation", "video_assembly", "uploading"]
+AudioStage = Literal["tts_generation", "concatenation", "uploading"]
 
 # ============ Event Loop Storage ============
 # Store reference to main event loop for thread-safe operations
@@ -125,6 +126,52 @@ class VideoJobProgress(BaseModel):
         return stage_msg
 
 
+class AudioJobProgress(BaseModel):
+    """Progress state for standalone audio generation job (TTS + timings, no rendering)."""
+    job_id: str
+    user_id: int
+    job_type: Literal["audio_generation"] = "audio_generation"
+    status: JobStatus = "queued"
+    current_stage: AudioStage = "tts_generation"
+    dialogue_title: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    result: Optional[dict] = None  # Contains audio_url, line_timings, word_timestamps, background_video_url
+
+    @property
+    def percentage(self) -> int:
+        """Calculate progress percentage."""
+        if self.status == "completed":
+            return 100
+        if self.status == "failed":
+            return 0
+        stage_order = ["tts_generation", "concatenation", "uploading"]
+        if self.current_stage in stage_order:
+            stage_index = stage_order.index(self.current_stage)
+            return min(99, int((stage_index / len(stage_order)) * 100))
+        return 0
+
+    @property
+    def message(self) -> str:
+        """Human-readable progress message."""
+        if self.status == "completed":
+            return "Audio generated successfully!"
+        if self.status == "failed":
+            return f"Failed: {self.error}"
+
+        stage_messages = {
+            "tts_generation": "Generating speech audio...",
+            "concatenation": "Combining audio segments...",
+            "uploading": "Uploading audio...",
+        }
+        stage_msg = stage_messages.get(self.current_stage, self.current_stage)
+
+        if self.dialogue_title:
+            return f"{stage_msg} ({self.dialogue_title})"
+        return stage_msg
+
+
 # DEPRECATED: Kept for backward compatibility
 class SubtopicProgress(BaseModel):
     """DEPRECATED: Progress for a single subtopic in video generation."""
@@ -153,7 +200,7 @@ class ProgressUpdate(BaseModel):
 
 
 # Union type for storage
-JobProgress = Union[TranscriptJobProgress, VideoJobProgress]
+JobProgress = Union[TranscriptJobProgress, VideoJobProgress, AudioJobProgress]
 
 
 # ============ In-Memory Storage ============
@@ -213,9 +260,27 @@ class ProgressService:
         with STORAGE_LOCK:
             PROGRESS_STORAGE[job_id] = job
             WEBSOCKET_CONNECTIONS[job_id] = set()
-        
+
         return job_id
-    
+
+    @staticmethod
+    def create_audio_job(user_id: int, dialogue_title: Optional[str] = None) -> str:
+        """Create a new standalone audio generation job (TTS + timings, no rendering)."""
+        job_id = uuid4().hex
+
+        job = AudioJobProgress(
+            job_id=job_id,
+            user_id=user_id,
+            dialogue_title=dialogue_title,
+            created_at=datetime.now(),
+        )
+
+        with STORAGE_LOCK:
+            PROGRESS_STORAGE[job_id] = job
+            WEBSOCKET_CONNECTIONS[job_id] = set()
+
+        return job_id
+
     @staticmethod
     def get_job(job_id: str) -> Optional[JobProgress]:
         """Retrieve job progress by ID."""
@@ -254,8 +319,8 @@ class ProgressService:
             if result:
                 job.result = result
             
-            # Update video-specific fields for single dialogue
-            if isinstance(job, VideoJobProgress):
+            # Update video/audio-specific fields for single dialogue
+            if isinstance(job, (VideoJobProgress, AudioJobProgress)):
                 if title:
                     job.dialogue_title = title
             
@@ -308,9 +373,9 @@ class ProgressService:
         else:
             msg_type = "progress"
         
-        # Get dialogue title for video jobs
+        # Get dialogue title for video/audio jobs
         dialogue_title = None
-        if isinstance(job, VideoJobProgress):
+        if isinstance(job, (VideoJobProgress, AudioJobProgress)):
             dialogue_title = job.dialogue_title
         
         return ProgressUpdate(
