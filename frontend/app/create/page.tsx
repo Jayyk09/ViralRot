@@ -1,18 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { XCircle, RotateCcw, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useFullVideoWorkflow } from "@/hooks/use-video-generation";
 import { SourceType } from "@/lib/types";
-import {
-    ThemeSwitcher,
-    COLOR_THEMES,
-    type ThemeKey,
-} from "@/components/theme-switcher";
-import { FloatingElements } from "@/components/floating-elements";
 
 import {
     CreateStepIndicator,
@@ -26,22 +19,6 @@ import { CompleteScreen } from "@/components/create-video/CompleteScreen";
 export default function CreatePage() {
     const router = useRouter();
     const queryClient = useQueryClient();
-    const [currentTheme, setCurrentTheme] = useState<ThemeKey>("warm-sunset");
-
-    // Apply theme CSS variables
-    useEffect(() => {
-        const theme = COLOR_THEMES[currentTheme];
-        const root = document.documentElement;
-        root.style.setProperty("--background", theme.background);
-        root.style.setProperty("--foreground", theme.foreground);
-        root.style.setProperty("--brainrot-coral", theme.primary);
-        root.style.setProperty("--brainrot-orange", theme.secondary);
-        root.style.setProperty("--brainrot-yellow", theme.accent);
-        root.style.setProperty("--brainrot-peach", theme.muted);
-        root.style.setProperty("--brainrot-brown", theme.brown);
-        root.style.setProperty("--primary", theme.primary);
-        root.style.setProperty("--ring", theme.primary);
-    }, [currentTheme]);
 
     // TODO: Get user_id from auth context
     const workflow = useFullVideoWorkflow(1);
@@ -117,26 +94,10 @@ export default function CreatePage() {
 
     return (
         <div className="min-h-screen bg-background text-foreground relative">
-            {/* Theme Switcher */}
-            <ThemeSwitcher
-                currentTheme={currentTheme}
-                onThemeChange={setCurrentTheme}
-            />
-
-            {/* Gradient overlay */}
-            <div className="fixed inset-0 bg-gradient-to-br from-brainrot-peach/40 via-transparent to-brainrot-yellow/30 pointer-events-none" />
-
-            {/* Floating decorative elements */}
-            <FloatingElements />
-
             {/* Header */}
-            <header className="border-b border-brainrot-orange/20 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
+            <header className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-                    <Button
-                        variant="ghost"
-                        onClick={handleGoHome}
-                        className="text-brainrot-brown/70 hover:text-brainrot-brown hover:bg-brainrot-peach/50"
-                    >
+                    <Button variant="ghost" onClick={handleGoHome}>
                         <ArrowLeft className="h-4 w-4 mr-2" />
                         Back to Feed
                     </Button>
@@ -195,13 +156,13 @@ export default function CreatePage() {
                 {workflow.step === "error" && (
                     <div className="max-w-xl mx-auto text-center space-y-8">
                         <div>
-                            <div className="w-20 h-20 rounded-full bg-red-500 flex items-center justify-center mx-auto mb-6">
-                                <XCircle className="h-12 w-12 text-white" />
+                            <div className="w-20 h-20 rounded-full bg-destructive flex items-center justify-center mx-auto mb-6">
+                                <XCircle className="h-12 w-12 text-destructive-foreground" />
                             </div>
-                            <h2 className="text-3xl font-bold text-brainrot-brown mb-2">
+                            <h2 className="text-3xl font-bold text-foreground mb-2">
                                 Something Went Wrong
                             </h2>
-                            <p className="text-foreground/60">
+                            <p className="text-muted-foreground">
                                 {workflow.error?.message ||
                                     "An unexpected error occurred during generation"}
                             </p>
@@ -211,14 +172,14 @@ export default function CreatePage() {
                             <Button
                                 variant="outline"
                                 onClick={handleGoHome}
-                                className="flex-1 border-brainrot-brown/30 text-brainrot-brown hover:bg-brainrot-peach/50 h-12"
+                                className="flex-1 h-12"
                             >
                                 <ArrowLeft className="h-4 w-4 mr-2" />
                                 Go Back
                             </Button>
                             <Button
                                 onClick={handleReset}
-                                className="flex-1 bg-brainrot-coral hover:bg-brainrot-coral/90 text-white h-12"
+                                className="flex-1 h-12"
                             >
                                 <RotateCcw className="h-4 w-4 mr-2" />
                                 Try Again
