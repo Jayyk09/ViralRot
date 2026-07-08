@@ -38,38 +38,36 @@ export function CaptionModeToggle({
             <div className="flex items-center gap-2">
                 <Label
                     htmlFor="karaoke-mode"
-                    className="text-sm font-medium text-brainrot-brown cursor-pointer"
+                    className="text-sm font-medium text-foreground cursor-pointer"
                 >
                     Karaoke Captions
                 </Label>
                 <TooltipProvider>
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Info className="h-4 w-4 text-brainrot-brown/50 cursor-help" />
+                            <Info className="h-4 w-4 text-muted-foreground cursor-help" />
                         </TooltipTrigger>
-                        <TooltipContent
-                            side="top"
-                            className="max-w-xs bg-white border-brainrot-orange/20"
-                        >
+                        <TooltipContent side="top" className="max-w-xs">
                             <div className="space-y-2 p-1">
-                                <p className="font-semibold text-brainrot-brown">
+                                <p className="font-semibold">
                                     Caption Modes:
                                 </p>
                                 <div>
-                                    <p className="text-sm font-medium text-brainrot-coral">
+                                    <p className="text-sm font-medium text-primary">
                                         Karaoke (ON):
                                     </p>
-                                    <p className="text-xs text-foreground/60">
-                                        Words highlight yellow one-by-one as
+                                    <p className="text-xs opacity-70">
+                                        Words highlight one-by-one as
                                         they&apos;re spoken
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-sm font-medium text-brainrot-brown">
+                                    <p className="text-sm font-medium">
                                         Box Captions (OFF):
                                     </p>
-                                    <p className="text-xs text-foreground/60">
-                                        Traditional white text in black boxes
+                                    <p className="text-xs opacity-70">
+                                        Traditional text in semi-transparent
+                                        boxes
                                     </p>
                                 </div>
                             </div>
@@ -81,9 +79,9 @@ export function CaptionModeToggle({
             <div className="flex items-center gap-3">
                 {/* Preview indicator */}
                 {enabled && (
-                    <span className="text-xs text-brainrot-brown/50">
+                    <span className="text-xs text-muted-foreground">
                         Words will{" "}
-                        <span className="text-brainrot-yellow font-semibold">
+                        <span className="text-chart-3 font-semibold">
                             highlight
                         </span>{" "}
                         as spoken
@@ -95,7 +93,7 @@ export function CaptionModeToggle({
                     checked={enabled}
                     onCheckedChange={onChange}
                     disabled={disabled}
-                    className="data-[state=checked]:bg-brainrot-coral"
+                    className="data-[state=checked]:bg-primary"
                 />
             </div>
         </div>
@@ -117,11 +115,11 @@ export function CaptionModeToggleCompact({
                 checked={enabled}
                 onCheckedChange={onChange}
                 disabled={disabled}
-                className="data-[state=checked]:bg-brainrot-coral scale-75"
+                className="data-[state=checked]:bg-primary scale-75"
             />
             <Label
                 htmlFor="karaoke-mode-compact"
-                className="text-xs text-brainrot-brown/60 cursor-pointer"
+                className="text-xs text-muted-foreground cursor-pointer"
             >
                 {enabled ? "Karaoke" : "Box captions"}
             </Label>

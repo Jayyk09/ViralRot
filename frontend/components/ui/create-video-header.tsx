@@ -44,9 +44,9 @@ export function EditorHeader({
                                         <Button
                                                 variant="outline"
                                                 size="sm"
-                                                className="h-7 gap-1.5 text-xs font-mono border-border/60 hover:border-brainrot-orange/50"
+                                                className="h-7 gap-1.5 text-xs font-mono border-border/60 hover:border-primary/50"
                                         >
-                                                <FolderOpen className="w-3.5 h-3.5 text-brainrot-orange" />
+                                                <FolderOpen className="w-3.5 h-3.5 text-primary" />
                                                 <span className="text-muted-foreground">FILE:</span>
                                                 <span className="text-foreground max-w-40 truncate">
                                                         {selectedVideo
@@ -82,7 +82,7 @@ export function EditorHeader({
                         <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 gap-1.5 text-xs text-brainrot-coral hover:text-brainrot-coral/80 hover:bg-brainrot-coral/10"
+                                className="h-7 gap-1.5 text-xs text-primary hover:text-primary/80 hover:bg-primary/10"
                         >
                                 <Play className="w-3.5 h-3.5 fill-current" />
                                 Preview All
@@ -93,7 +93,7 @@ export function EditorHeader({
                                         <Button
                                                 variant="outline"
                                                 size="sm"
-                                                className="h-7 gap-1.5 text-xs border-green-500/40 text-green-600"
+                                                className="h-7 gap-1.5 text-xs border-success/40 text-success"
                                                 asChild
                                         >
                                                 <a href={exportUrl} target="_blank" rel="noopener noreferrer">

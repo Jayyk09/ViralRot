@@ -134,7 +134,7 @@ export function CanvasPreview({
     return (
         <div
             className={cn(
-                "relative bg-black/50 rounded-lg overflow-hidden",
+                "relative bg-muted rounded-lg overflow-hidden",
                 className,
             )}
         >
@@ -159,8 +159,8 @@ export function CanvasPreview({
 
             {/* Loading Overlay */}
             {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                    <Loader2 className="w-8 h-8 text-white animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+                    <Loader2 className="w-8 h-8 text-foreground animate-spin" />
                 </div>
             )}
 
@@ -168,20 +168,20 @@ export function CanvasPreview({
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
                 <button
                     onClick={togglePlayback}
-                    className="p-2 rounded-full bg-black/60 hover:bg-black/80 transition-colors"
+                    className="p-2 rounded-full bg-background/70 hover:bg-background/90 transition-colors"
                     title={isPlaying ? "Pause" : "Play"}
                 >
                     {isPlaying ? (
-                        <Pause className="w-4 h-4 text-white" />
+                        <Pause className="w-4 h-4 text-foreground" />
                     ) : (
-                        <Play className="w-4 h-4 text-white ml-0.5" />
+                        <Play className="w-4 h-4 text-foreground ml-0.5" />
                     )}
                 </button>
             </div>
 
             {/* Segment Info */}
             {currentSegment && (
-                <div className="absolute top-3 left-3 px-2 py-1 rounded bg-black/60 text-white text-xs font-mono">
+                <div className="absolute top-3 left-3 px-2 py-1 rounded bg-background/70 text-foreground text-xs font-mono">
                     Line {currentSegmentIdx + 1}/{lines.length}
                 </div>
             )}
@@ -192,8 +192,8 @@ export function CanvasPreview({
                     className={cn(
                         "absolute top-3 right-3 px-2 py-1 rounded text-xs font-bold uppercase",
                         currentSegment.line.speaker === "PETER"
-                            ? "bg-blue-500 text-white"
-                            : "bg-purple-500 text-white",
+                            ? "bg-chart-1 text-primary-foreground"
+                            : "bg-chart-4 text-primary-foreground",
                     )}
                 >
                     {currentSegment.line.speaker}

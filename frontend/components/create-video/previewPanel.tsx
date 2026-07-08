@@ -21,7 +21,7 @@ export function PreviewPanel({ selectedLine, video }: PreviewPanelProps) {
     }, []);
 
     return (
-        <div>
+        <div className="relative w-full h-full bg-muted rounded-lg overflow-hidden">
             <div ref={widthRef} className="absolute inset-0 flex justify-center items-center">
                 <video
                     className="h-full w-auto aspect-[9/16] max-w-full"
@@ -43,7 +43,7 @@ export function PreviewPanel({ selectedLine, video }: PreviewPanelProps) {
                         alt=""
                     />
                 ))}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background/80 text-foreground text-sm font-medium px-3 py-1.5 rounded-md">
                     {selectedLine.caption}
                 </div>
             </div>

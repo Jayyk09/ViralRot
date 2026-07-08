@@ -16,8 +16,8 @@ interface DialogueListProps {
 }
 
 const SPEAKER_BADGE: Record<string, string> = {
-        PETER: "bg-blue-500/10 border-blue-400/40 text-blue-500",
-        STEWIE: "bg-purple-500/10 border-purple-400/40 text-purple-500",
+        PETER: "bg-chart-1/10 border-chart-1/40 text-chart-1",
+        STEWIE: "bg-chart-4/10 border-chart-4/40 text-chart-4",
 };
 
 export function DialogueList({
@@ -42,7 +42,7 @@ export function DialogueList({
                                                 className={cn(
                                                         "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors",
                                                         captionMode === "karaoke"
-                                                                ? "bg-yellow-500/20 text-yellow-600 hover:bg-yellow-500/30"
+                                                                ? "bg-chart-3/20 text-chart-3 hover:bg-chart-3/30"
                                                                 : "bg-muted text-muted-foreground hover:bg-accent"
                                                 )}
                                                 title={captionMode === "karaoke" ? "Karaoke Mode" : "Box Mode"}
@@ -66,7 +66,7 @@ export function DialogueList({
                                                                 "w-full text-left rounded-lg border px-3 py-2.5 transition-all duration-150",
                                                                 "hover:bg-accent/40",
                                                                 idx === selectedLineIdx
-                                                                        ? "ring-2 ring-brainrot-coral/60 border-brainrot-coral/30 bg-brainrot-coral/5"
+                                                                        ? "ring-2 ring-primary/60 border-primary/30 bg-primary/5"
                                                                         : "border-border/50 bg-card",
                                                         )}
                                                 >
