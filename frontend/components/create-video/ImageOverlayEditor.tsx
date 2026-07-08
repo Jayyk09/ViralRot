@@ -347,12 +347,12 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     className={cn(
-                        "absolute -top-2 -left-2 p-1 rounded-full bg-red-500 hover:bg-red-600 transition-all shadow-lg z-10",
+                        "absolute -top-2 -left-2 p-1 rounded-full bg-destructive hover:bg-destructive/90 transition-all shadow-lg z-10",
                         showControls ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
                     )}
                     title="Delete image"
                 >
-                    <X className="w-3 h-3 text-white" />
+                    <X className="w-3 h-3 text-destructive-foreground" />
                 </button>
 
                 {/* Resize handles - corners */}
@@ -360,22 +360,22 @@ function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }:
                     <>
                         {/* Top-left */}
                         <div
-                            className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm cursor-nw-resize shadow"
+                            className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-primary-foreground border-2 border-primary rounded-sm cursor-nw-resize shadow"
                             onMouseDown={(e) => handleResizeStart(e, "nw")}
                         />
                         {/* Top-right */}
                         <div
-                            className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm cursor-ne-resize shadow"
+                            className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-primary-foreground border-2 border-primary rounded-sm cursor-ne-resize shadow"
                             onMouseDown={(e) => handleResizeStart(e, "ne")}
                         />
                         {/* Bottom-left */}
                         <div
-                            className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm cursor-sw-resize shadow"
+                            className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-primary-foreground border-2 border-primary rounded-sm cursor-sw-resize shadow"
                             onMouseDown={(e) => handleResizeStart(e, "sw")}
                         />
                         {/* Bottom-right */}
                         <div
-                            className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm cursor-se-resize shadow"
+                            className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-primary-foreground border-2 border-primary rounded-sm cursor-se-resize shadow"
                             onMouseDown={(e) => handleResizeStart(e, "se")}
                         />
                     </>

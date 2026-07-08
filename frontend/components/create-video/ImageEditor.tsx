@@ -108,7 +108,7 @@ export function ImageEditor({
                         {validation.errors.map((error, i) => (
                             <div
                                 key={`error-${i}`}
-                                className="flex items-start gap-2 p-2 bg-red-500/10 border border-red-500/20 rounded text-sm text-red-400"
+                                className="flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive"
                             >
                                 <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                                 <span>{error}</span>
@@ -117,7 +117,7 @@ export function ImageEditor({
                         {validation.warnings.map((warning, i) => (
                             <div
                                 key={`warning-${i}`}
-                                className="flex items-start gap-2 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-sm text-yellow-400"
+                                className="flex items-start gap-2 p-2 bg-warning/10 border border-warning/20 rounded text-sm text-warning"
                             >
                                 <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                                 <span>{warning}</span>
@@ -128,14 +128,14 @@ export function ImageEditor({
 
                 {/* Dialogue Title */}
                 {dialogue?.title && (
-                    <div className="mb-4 p-3 bg-white/60 backdrop-blur-sm border border-brainrot-orange/20 rounded-lg">
-                        <h3 className="font-medium text-brainrot-brown">
+                    <div className="mb-4 p-3 bg-card border border-border rounded-lg">
+                        <h3 className="font-medium text-foreground">
                             {dialogue.title}
                         </h3>
-                        <p className="text-sm text-foreground/60 mt-1">
+                        <p className="text-sm text-muted-foreground mt-1">
                             {dialogue.dialogue.length} dialogue lines
                             {editor.hasImages() && (
-                                <span className="ml-2 text-brainrot-coral">
+                                <span className="ml-2 text-primary">
                                     ({editor.getImageFiles().length} images)
                                 </span>
                             )}
@@ -152,7 +152,7 @@ export function ImageEditor({
                                 onClick={() => setSelectedLineIdx(lineIdx)}
                                 className={`cursor-pointer transition-all ${
                                     selectedLineIdx === lineIdx
-                                        ? "ring-2 ring-brainrot-coral ring-offset-2 ring-offset-background rounded-lg"
+                                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-lg"
                                         : ""
                                 }`}
                             >
@@ -201,7 +201,7 @@ export function ImageEditor({
                 </ScrollArea>
 
                 {/* Summary & Actions */}
-                <div className="mt-4 pt-4 border-t border-brainrot-orange/20">
+                <div className="mt-4 pt-4 border-t border-border">
                     {/* Caption Mode Toggle */}
                     <div className="mb-4">
                         <CaptionModeToggle
@@ -211,7 +211,7 @@ export function ImageEditor({
                     </div>
 
                     <div className="flex items-center justify-between mb-4">
-                        <div className="text-sm text-foreground/60">
+                        <div className="text-sm text-muted-foreground">
                             {editor.hasImages() ? (
                                 <span>
                                     {editor.getImageFiles().length} image
@@ -229,7 +229,6 @@ export function ImageEditor({
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => editor.clearAllImages()}
-                                className="text-brainrot-brown/60 hover:text-red-500"
                             >
                                 <Trash2 className="h-4 w-4 mr-1" />
                                 Clear all
@@ -241,7 +240,6 @@ export function ImageEditor({
                         <Button
                             variant="outline"
                             onClick={onBack}
-                            className="border-brainrot-brown/30 text-brainrot-brown hover:bg-brainrot-peach/50"
                             disabled={isGenerating}
                         >
                             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -249,7 +247,7 @@ export function ImageEditor({
                         </Button>
                         <Button
                             onClick={handleGenerate}
-                            className="flex-1 bg-brainrot-coral hover:bg-brainrot-coral/90 text-white shadow-lg shadow-brainrot-coral/25"
+                            className="flex-1"
                             disabled={isGenerating || !validation.valid}
                         >
                             {isGenerating ? (
@@ -271,7 +269,7 @@ export function ImageEditor({
             {/* Right Column: Position Preview */}
             <div className="lg:w-80 shrink-0">
                 <div className="sticky top-4">
-                    <h3 className="text-sm font-medium text-brainrot-brown/70 mb-3">
+                    <h3 className="text-sm font-medium text-muted-foreground mb-3">
                         {selectedLineIdx !== null
                             ? `Line ${selectedLineIdx + 1} Preview`
                             : "Video Layout Preview"}
@@ -281,7 +279,7 @@ export function ImageEditor({
                         previewUrls={editor.state.imagePreviewUrls}
                         interactive={false}
                     />
-                    <p className="mt-4 text-xs text-brainrot-brown/50 text-center">
+                    <p className="mt-4 text-xs text-muted-foreground text-center">
                         Click a dialogue line on the left to see its images in
                         context
                     </p>
