@@ -37,7 +37,7 @@ export function EditorHeader({
         exportUrl,
 }: EditorHeaderProps) {
         return (
-                <div className="flex items-center gap-3 px-4 h-11 border-b border-border/60 bg-card shrink-0">
+                <div className="panel-edge flex items-center gap-3 px-4 h-11 border-b border-border/60 bg-card shrink-0">
                         {/* File selector */}
                         <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

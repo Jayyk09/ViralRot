@@ -101,13 +101,15 @@ export default function CreatePage() {
                         <ArrowLeft className="h-4 w-4 mr-2" />
                         Back to Feed
                     </Button>
-                    <CreateStepIndicator currentStep={getCreateStep()} />
+                    <span className="font-[family-name:var(--font-heading)] text-sm font-medium text-muted-foreground">
+                        Create New Video
+                    </span>
                     <div className="w-24" /> {/* Spacer for centering */}
                 </div>
             </header>
 
             {/* Main Content */}
-            <main className="max-w-7xl mx-auto px-4 py-8 relative z-[1]">
+            <main className="max-w-7xl mx-auto px-4 py-8 pb-24 relative z-[1]">
                 {/* Source Input Step */}
                 {workflow.step === "idle" && (
                     <SourceInput
@@ -188,6 +190,12 @@ export default function CreatePage() {
                     </div>
                 )}
             </main>
+
+            {/* Resolve-style page-tab bar, pinned to the bottom of the window */}
+            <CreateStepIndicator
+                currentStep={getCreateStep()}
+                className="fixed bottom-0 left-0 right-0 z-10"
+            />
         </div>
     );
 }
