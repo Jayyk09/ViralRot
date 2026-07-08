@@ -27,12 +27,11 @@ export function CollectionsSidebar({
 
     if (isCollapsed) {
         return (
-            <div className="w-12 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4">
+            <div className="w-12 bg-card border-r border-border flex flex-col items-center py-4">
                 <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => setIsCollapsed(false)}
-                    className="text-gray-400 hover:text-white hover:bg-gray-800"
                 >
                     <ChevronRight className="h-5 w-5" />
                 </Button>
@@ -41,33 +40,28 @@ export function CollectionsSidebar({
     }
 
     return (
-        <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col">
+        <div className="w-64 bg-card border-r border-border flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-800">
-                <h2 className="text-lg font-semibold text-white">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+                <h2 className="text-lg font-semibold text-foreground font-[family-name:var(--font-heading)]">
                     Collections
                 </h2>
                 <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => setIsCollapsed(true)}
-                    className="text-gray-400 hover:text-white hover:bg-gray-800"
                 >
                     <ChevronLeft className="h-5 w-5" />
                 </Button>
             </div>
 
             {/* All Videos Option */}
-            <div className="p-2 border-b border-gray-800">
+            <div className="p-2 border-b border-border">
                 <Button
                     variant={
                         selectedCollectionId === null ? "default" : "ghost"
                     }
-                    className={`w-full justify-start ${
-                        selectedCollectionId === null
-                            ? "bg-indigo-600 hover:bg-indigo-700 text-white"
-                            : "text-gray-300 hover:bg-gray-800 hover:text-white"
-                    }`}
+                    className="w-full justify-start"
                     onClick={() => onCollectionSelect(null)}
                 >
                     <Home className="h-4 w-4 mr-2" />
@@ -79,11 +73,11 @@ export function CollectionsSidebar({
             <ScrollArea className="flex-1">
                 <div className="p-2 space-y-1">
                     {isLoading ? (
-                        <div className="text-gray-400 text-sm p-4">
+                        <div className="text-muted-foreground text-sm p-4">
                             Loading collections...
                         </div>
                     ) : collections.length === 0 ? (
-                        <div className="text-gray-400 text-sm p-4">
+                        <div className="text-muted-foreground text-sm p-4">
                             No collections yet
                         </div>
                     ) : (
@@ -95,11 +89,7 @@ export function CollectionsSidebar({
                                         ? "default"
                                         : "ghost"
                                 }
-                                className={`w-full justify-start text-left ${
-                                    selectedCollectionId === collection.id
-                                        ? "bg-indigo-600 hover:bg-indigo-700 text-white"
-                                        : "text-gray-300 hover:bg-gray-800 hover:text-white"
-                                }`}
+                                className="w-full justify-start text-left"
                                 onClick={() =>
                                     onCollectionSelect(collection.id)
                                 }

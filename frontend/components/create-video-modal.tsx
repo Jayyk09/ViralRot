@@ -130,31 +130,22 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
 
     const renderSourceInput = () => (
         <div className="space-y-2">
-            <Label className="text-white">Source</Label>
+            <Label>Source</Label>
             <Tabs
                 value={activeTab}
                 onValueChange={(v) => setActiveTab(v as typeof activeTab)}
                 className="w-full"
             >
-                <TabsList className="grid w-full grid-cols-3 bg-gray-800">
-                    <TabsTrigger
-                        value="youtube"
-                        className="data-[state=active]:bg-indigo-600"
-                    >
+                <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="youtube">
                         <LinkIcon className="h-4 w-4 mr-2" />
                         YouTube
                     </TabsTrigger>
-                    <TabsTrigger
-                        value="text"
-                        className="data-[state=active]:bg-indigo-600"
-                    >
+                    <TabsTrigger value="text">
                         <FileText className="h-4 w-4 mr-2" />
                         Text
                     </TabsTrigger>
-                    <TabsTrigger
-                        value="upload"
-                        className="data-[state=active]:bg-indigo-600"
-                    >
+                    <TabsTrigger value="upload">
                         <Upload className="h-4 w-4 mr-2" />
                         Upload
                     </TabsTrigger>
@@ -165,10 +156,9 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                         placeholder="https://youtube.com/watch?v=..."
                         value={youtubeUrl}
                         onChange={(e) => setYoutubeUrl(e.target.value)}
-                        className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
                         disabled={workflow.isLoading}
                     />
-                    <p className="text-sm text-gray-400">
+                    <p className="text-sm text-muted-foreground">
                         Paste a YouTube URL to generate a video
                     </p>
                 </TabsContent>
@@ -178,16 +168,16 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                         placeholder="Enter your text content here..."
                         value={textContent}
                         onChange={(e) => setTextContent(e.target.value)}
-                        className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 min-h-[200px] resize-none"
+                        className="min-h-[200px] resize-none"
                         disabled={workflow.isLoading}
                     />
-                    <p className="text-sm text-gray-400">
+                    <p className="text-sm text-muted-foreground">
                         Paste or type text to generate a video
                     </p>
                 </TabsContent>
 
                 <TabsContent value="upload" className="space-y-3 mt-4">
-                    <div className="border-2 border-dashed border-gray-700 rounded-lg p-8 text-center hover:border-indigo-500 transition-colors cursor-pointer">
+                    <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer">
                         <input
                             type="file"
                             id="file-upload"
@@ -197,23 +187,23 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                             disabled={workflow.isLoading}
                         />
                         <label htmlFor="file-upload" className="cursor-pointer">
-                            <Upload className="h-12 w-12 text-gray-500 mx-auto mb-3" />
+                            <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
                             {file ? (
                                 <div>
-                                    <p className="text-white font-medium">
+                                    <p className="text-foreground font-medium">
                                         {file.name}
                                     </p>
-                                    <p className="text-sm text-gray-400 mt-1">
+                                    <p className="text-sm text-muted-foreground mt-1">
                                         {(file.size / 1024 / 1024).toFixed(2)}{" "}
                                         MB
                                     </p>
                                 </div>
                             ) : (
                                 <div>
-                                    <p className="text-white font-medium">
+                                    <p className="text-foreground font-medium">
                                         Click to upload
                                     </p>
-                                    <p className="text-sm text-gray-400 mt-1">
+                                    <p className="text-sm text-muted-foreground mt-1">
                                         Audio (.mp3, .wav) or PowerPoint (.pptx)
                                     </p>
                                 </div>
@@ -244,52 +234,56 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                 {/* Step Indicator */}
                 <div className="flex items-center justify-center gap-4">
                     <div
-                        className={`flex items-center gap-2 ${isTranscriptStep || step === "editing" || step === "video" || step === "complete" ? "text-indigo-400" : "text-gray-500"}`}
+                        className={`flex items-center gap-2 ${isTranscriptStep || step === "editing" || step === "video" || step === "complete" ? "text-primary" : "text-muted-foreground"}`}
                     >
                         <div
                             className={`w-8 h-8 rounded-full flex items-center justify-center ${
                                 step === "editing" ||
                                 step === "video" ||
                                 step === "complete"
-                                    ? "bg-green-600"
+                                    ? "bg-success"
                                     : isTranscriptStep
-                                      ? "bg-indigo-600"
-                                      : "bg-gray-700"
+                                      ? "bg-primary"
+                                      : "bg-muted"
                             }`}
                         >
                             {step === "editing" ||
                             step === "video" ||
                             step === "complete" ? (
-                                <CheckCircle2 className="h-5 w-5 text-white" />
+                                <CheckCircle2 className="h-5 w-5 text-success-foreground" />
                             ) : isTranscriptStep ? (
-                                <Loader2 className="h-5 w-5 text-white animate-spin" />
+                                <Loader2 className="h-5 w-5 text-primary-foreground animate-spin" />
                             ) : (
-                                <span className="text-white text-sm">1</span>
+                                <span className="text-foreground text-sm">
+                                    1
+                                </span>
                             )}
                         </div>
                         <span className="text-sm font-medium">Transcript</span>
                     </div>
 
-                    <div className="w-12 h-0.5 bg-gray-700" />
+                    <div className="w-12 h-0.5 bg-border" />
 
                     <div
-                        className={`flex items-center gap-2 ${isVideoStep || step === "complete" ? "text-indigo-400" : "text-gray-500"}`}
+                        className={`flex items-center gap-2 ${isVideoStep || step === "complete" ? "text-primary" : "text-muted-foreground"}`}
                     >
                         <div
                             className={`w-8 h-8 rounded-full flex items-center justify-center ${
                                 step === "complete"
-                                    ? "bg-green-600"
+                                    ? "bg-success"
                                     : isVideoStep
-                                      ? "bg-indigo-600"
-                                      : "bg-gray-700"
+                                      ? "bg-primary"
+                                      : "bg-muted"
                             }`}
                         >
                             {step === "complete" ? (
-                                <CheckCircle2 className="h-5 w-5 text-white" />
+                                <CheckCircle2 className="h-5 w-5 text-success-foreground" />
                             ) : isVideoStep ? (
-                                <Loader2 className="h-5 w-5 text-white animate-spin" />
+                                <Loader2 className="h-5 w-5 text-primary-foreground animate-spin" />
                             ) : (
-                                <span className="text-white text-sm">2</span>
+                                <span className="text-foreground text-sm">
+                                    2
+                                </span>
                             )}
                         </div>
                         <span className="text-sm font-medium">Video</span>
@@ -300,23 +294,23 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                 {(isTranscriptStep || isVideoStep) && (
                     <div className="space-y-3">
                         <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-400">
+                            <span className="text-muted-foreground">
                                 {isTranscriptStep
                                     ? stepLabels.transcript
                                     : stepLabels.video}
                             </span>
-                            <span className="text-indigo-400 font-medium">
+                            <span className="text-primary font-medium">
                                 {percentage}%
                             </span>
                         </div>
                         <Progress value={percentage} className="h-2" />
-                        <p className="text-sm text-gray-400 text-center">
+                        <p className="text-sm text-muted-foreground text-center">
                             {message}
                         </p>
 
                         {/* Dialogue Title (Video step) */}
                         {isVideoStep && progress?.dialogue_title && (
-                            <p className="text-xs text-gray-500 text-center">
+                            <p className="text-xs text-muted-foreground text-center">
                                 {progress.dialogue_title}
                             </p>
                         )}
@@ -332,41 +326,41 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
         return (
             <div className="space-y-6 text-center">
                 <div className="flex flex-col items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center">
-                        <CheckCircle2 className="h-10 w-10 text-white" />
+                    <div className="w-16 h-16 rounded-full bg-success flex items-center justify-center">
+                        <CheckCircle2 className="h-10 w-10 text-success-foreground" />
                     </div>
                     <div>
-                        <h3 className="text-xl font-bold text-white">
+                        <h3 className="text-xl font-bold text-foreground">
                             Video Generated!
                         </h3>
-                        <p className="text-gray-400 mt-1">
+                        <p className="text-muted-foreground mt-1">
                             Your video has been created successfully
                         </p>
                     </div>
                 </div>
 
                 {video && (
-                    <div className="bg-gray-800 rounded-lg p-4 text-left">
+                    <div className="bg-muted rounded-lg p-4 text-left">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white font-medium">
+                                <p className="text-foreground font-medium">
                                     {dialogue?.title || "Educational Video"}
                                 </p>
                                 {dialogue && (
-                                    <p className="text-sm text-gray-400 mt-1">
+                                    <p className="text-sm text-muted-foreground mt-1">
                                         {dialogue.dialogue.length} dialogue
                                         lines
                                     </p>
                                 )}
                             </div>
-                            <CheckCircle2 className="h-6 w-6 text-green-400" />
+                            <CheckCircle2 className="h-6 w-6 text-success" />
                         </div>
                         {video.access_url && (
                             <a
                                 href={video.access_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="mt-3 inline-block text-sm text-indigo-400 hover:text-indigo-300 underline"
+                                className="mt-3 inline-block text-sm text-primary hover:text-primary/80 underline"
                             >
                                 View video
                             </a>
@@ -383,14 +377,14 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
         return (
             <div className="space-y-6 text-center">
                 <div className="flex flex-col items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center">
-                        <XCircle className="h-10 w-10 text-white" />
+                    <div className="w-16 h-16 rounded-full bg-destructive flex items-center justify-center">
+                        <XCircle className="h-10 w-10 text-destructive-foreground" />
                     </div>
                     <div>
-                        <h3 className="text-xl font-bold text-white">
+                        <h3 className="text-xl font-bold text-foreground">
                             Generation Failed
                         </h3>
-                        <p className="text-gray-400 mt-1">
+                        <p className="text-muted-foreground mt-1">
                             {error?.message || "An unexpected error occurred"}
                         </p>
                     </div>
@@ -442,13 +436,13 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                             type="button"
                             variant="outline"
                             onClick={handleClose}
-                            className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+                            className="flex-1"
                         >
                             Cancel
                         </Button>
                         <Button
                             onClick={handleStartTranscript}
-                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                            className="flex-1"
                             disabled={!getSourceType()}
                         >
                             <Sparkles className="h-4 w-4 mr-2" />
@@ -464,7 +458,7 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                         type="button"
                         variant="outline"
                         onClick={handleClose}
-                        className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+                        className="flex-1"
                         disabled={isLoading}
                     >
                         {isLoading ? "Processing..." : "Cancel"}
@@ -482,15 +476,12 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                             type="button"
                             variant="outline"
                             onClick={handleReset}
-                            className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+                            className="flex-1"
                         >
                             <RotateCcw className="h-4 w-4 mr-2" />
                             Create Another
                         </Button>
-                        <Button
-                            onClick={handleClose}
-                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
-                        >
+                        <Button onClick={handleClose} className="flex-1">
                             Done
                         </Button>
                     </>
@@ -503,14 +494,11 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                             type="button"
                             variant="outline"
                             onClick={handleClose}
-                            className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+                            className="flex-1"
                         >
                             Close
                         </Button>
-                        <Button
-                            onClick={handleReset}
-                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
-                        >
+                        <Button onClick={handleReset} className="flex-1">
                             <RotateCcw className="h-4 w-4 mr-2" />
                             Try Again
                         </Button>
@@ -569,22 +557,20 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
             <DialogContent
-                className={`${dialogSizeClass} bg-gray-900 border-gray-800 text-white overflow-hidden flex flex-col`}
+                className={`${dialogSizeClass} bg-card border-border overflow-hidden flex flex-col`}
             >
                 <DialogHeader className="flex-shrink-0">
-                    <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+                    <DialogTitle className="text-2xl font-bold flex items-center gap-2 font-[family-name:var(--font-heading)]">
                         {workflow.step === "complete" ? (
-                            <CheckCircle2 className="h-6 w-6 text-green-500" />
+                            <CheckCircle2 className="h-6 w-6 text-success" />
                         ) : workflow.step === "error" ? (
-                            <XCircle className="h-6 w-6 text-red-500" />
+                            <XCircle className="h-6 w-6 text-destructive" />
                         ) : (
-                            <Sparkles className="h-6 w-6 text-indigo-500" />
+                            <Sparkles className="h-6 w-6 text-primary" />
                         )}
                         {getTitle()}
                     </DialogTitle>
-                    <DialogDescription className="text-gray-400">
-                        {getDescription()}
-                    </DialogDescription>
+                    <DialogDescription>{getDescription()}</DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-6 mt-4 overflow-y-auto flex-1 pr-2 pb-4">
@@ -593,7 +579,7 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
 
                 {/* Actions - Fixed at bottom, only show if there are actions */}
                 {actions && (
-                    <div className="flex gap-3 pt-4 border-t border-gray-800 mt-4 flex-shrink-0">
+                    <div className="flex gap-3 pt-4 border-t border-border mt-4 flex-shrink-0">
                         {actions}
                     </div>
                 )}

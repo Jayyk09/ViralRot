@@ -25,11 +25,6 @@ export function SubjectFilter({
                             selectedSubject === subject ? "default" : "outline"
                         }
                         size="sm"
-                        className={
-                            selectedSubject === subject
-                                ? "bg-indigo-600 hover:bg-indigo-700 text-white border-none"
-                                : "bg-white border-gray-300 text-gray-900 hover:bg-gray-100 hover:border-indigo-300"
-                        }
                     >
                         {subject.charAt(0).toUpperCase() + subject.slice(1)}
                     </Button>
