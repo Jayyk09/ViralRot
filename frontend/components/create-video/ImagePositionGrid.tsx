@@ -30,28 +30,29 @@ interface ImagePositionGridProps {
     className?: string;
 }
 
-// Color scheme for different sizes
+// Color scheme for different sizes (mapped to the chart tokens so each
+// size stays visually distinct without introducing off-palette hues)
 const SIZE_COLORS = {
     small: {
-        bg: "bg-green-500/20",
-        border: "border-green-500/50",
-        text: "text-green-400",
-        hover: "hover:bg-green-500/30 hover:border-green-500",
-        active: "bg-green-500/40 border-green-500",
+        bg: "bg-chart-2/20",
+        border: "border-chart-2/50",
+        text: "text-chart-2",
+        hover: "hover:bg-chart-2/30 hover:border-chart-2",
+        active: "bg-chart-2/40 border-chart-2",
     },
     medium: {
-        bg: "bg-blue-500/20",
-        border: "border-blue-500/50",
-        text: "text-blue-400",
-        hover: "hover:bg-blue-500/30 hover:border-blue-500",
-        active: "bg-blue-500/40 border-blue-500",
+        bg: "bg-chart-5/20",
+        border: "border-chart-5/50",
+        text: "text-chart-5",
+        hover: "hover:bg-chart-5/30 hover:border-chart-5",
+        active: "bg-chart-5/40 border-chart-5",
     },
     large: {
-        bg: "bg-purple-500/20",
-        border: "border-purple-500/50",
-        text: "text-purple-400",
-        hover: "hover:bg-purple-500/30 hover:border-purple-500",
-        active: "bg-purple-500/40 border-purple-500",
+        bg: "bg-chart-4/20",
+        border: "border-chart-4/50",
+        text: "text-chart-4",
+        hover: "hover:bg-chart-4/30 hover:border-chart-4",
+        active: "bg-chart-4/40 border-chart-4",
     },
 };
 
@@ -102,30 +103,27 @@ export function ImagePositionGrid({
         <div className={cn("relative", className)}>
             {/* Phone Frame */}
             <div
-                className="relative bg-brainrot-brown/90 rounded-2xl border-2 border-brainrot-orange/30 overflow-hidden mx-auto"
+                className="relative bg-muted rounded-lg border-2 border-border overflow-hidden mx-auto"
                 style={{
                     aspectRatio: `${VIDEO_WIDTH} / ${VIDEO_HEIGHT}`,
                     maxHeight: "500px",
                 }}
             >
-                {/* Background gradient to simulate video */}
-                <div className="absolute inset-0 bg-gradient-to-b from-brainrot-brown/80 to-brainrot-brown/95" />
-
                 {/* Character silhouettes (left side) */}
                 <div className="absolute bottom-0 left-0 w-1/3 h-2/5 flex items-end">
                     <div className="relative w-full h-full">
                         {/* Peter silhouette */}
-                        <div className="absolute bottom-0 left-2 w-16 h-32 bg-brainrot-peach/30 rounded-t-full" />
+                        <div className="absolute bottom-0 left-2 w-16 h-32 bg-muted-foreground/20 rounded-t-full" />
                         {/* Stewie silhouette */}
-                        <div className="absolute bottom-0 left-12 w-10 h-20 bg-brainrot-peach/20 rounded-t-full" />
+                        <div className="absolute bottom-0 left-12 w-10 h-20 bg-muted-foreground/15 rounded-t-full" />
                     </div>
                 </div>
 
                 {/* Caption area */}
                 <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4">
-                    <div className="bg-brainrot-peach/30 rounded-lg p-3 text-center">
-                        <div className="h-2 bg-brainrot-peach/40 rounded w-3/4 mx-auto mb-2" />
-                        <div className="h-2 bg-brainrot-peach/40 rounded w-1/2 mx-auto" />
+                    <div className="bg-card/80 border border-border rounded-lg p-3 text-center">
+                        <div className="h-2 bg-muted-foreground/30 rounded w-3/4 mx-auto mb-2" />
+                        <div className="h-2 bg-muted-foreground/30 rounded w-1/2 mx-auto" />
                     </div>
                 </div>
 
@@ -167,7 +165,7 @@ export function ImagePositionGrid({
                                             colors.hover,
                                             "cursor-pointer",
                                         )
-                                      : "bg-brainrot-peach/20 border-brainrot-orange/30 cursor-not-allowed opacity-50",
+                                      : "bg-muted/50 border-border cursor-not-allowed opacity-50",
                             )}
                             style={{
                                 left: `${slot.x}%`,
@@ -191,7 +189,7 @@ export function ImagePositionGrid({
                                         "text-xs font-medium",
                                         isAvailable
                                             ? colors.text
-                                            : "text-brainrot-peach/60",
+                                            : "text-muted-foreground",
                                     )}
                                 >
                                     {slot.label}
@@ -205,20 +203,20 @@ export function ImagePositionGrid({
             {/* Legend */}
             <div className="mt-4 flex flex-wrap justify-center gap-4 text-xs">
                 <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded bg-green-500/40 border border-green-500" />
-                    <span className="text-brainrot-brown/60">
+                    <div className="w-3 h-3 rounded bg-chart-2/40 border border-chart-2" />
+                    <span className="text-muted-foreground">
                         Small (300px)
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded bg-blue-500/40 border border-blue-500" />
-                    <span className="text-brainrot-brown/60">
+                    <div className="w-3 h-3 rounded bg-chart-5/40 border border-chart-5" />
+                    <span className="text-muted-foreground">
                         Medium (540px)
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded bg-purple-500/40 border border-purple-500" />
-                    <span className="text-brainrot-brown/60">
+                    <div className="w-3 h-3 rounded bg-chart-4/40 border border-chart-4" />
+                    <span className="text-muted-foreground">
                         Large (800px)
                     </span>
                 </div>
@@ -226,7 +224,7 @@ export function ImagePositionGrid({
 
             {/* Instructions */}
             {interactive && selectedSize && (
-                <p className="mt-3 text-center text-xs text-brainrot-brown/50">
+                <p className="mt-3 text-center text-xs text-muted-foreground">
                     Click a highlighted position to place your {selectedSize}{" "}
                     image
                 </p>

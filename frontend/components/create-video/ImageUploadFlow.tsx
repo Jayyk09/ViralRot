@@ -125,13 +125,13 @@ export function ImageUploadFlow({
 
     return (
         <Dialog open={isOpen} onOpenChange={handleReset}>
-            <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto bg-background border-brainrot-orange/20 text-foreground">
+            <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2 text-brainrot-brown">
-                        <Upload className="h-5 w-5 text-brainrot-coral" />
+                    <DialogTitle className="flex items-center gap-2">
+                        <Upload className="h-5 w-5 text-primary" />
                         Add Image
                     </DialogTitle>
-                    <DialogDescription className="text-foreground/60">
+                    <DialogDescription>
                         {step === "size" && "Step 1: Choose image size"}
                         {step === "upload" && "Step 2: Upload your image"}
                         {step === "position" && "Step 3: Select position"}
@@ -142,7 +142,7 @@ export function ImageUploadFlow({
                     {/* Step 1: Size Selection */}
                     {step === "size" && (
                         <div className="space-y-4">
-                            <p className="text-sm text-foreground/60 mb-4">
+                            <p className="text-sm text-muted-foreground mb-4">
                                 Choose a size for your educational image:
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -159,25 +159,25 @@ export function ImageUploadFlow({
                                                 handleSizeSelect(size)
                                             }
                                             disabled={!isAllowed}
-                                            className={`p-3 rounded-lg border-2 transition-all text-left ${
+                                            className={`p-3 rounded-lg border-2 transition-colors text-left ${
                                                 isAllowed
-                                                    ? "border-brainrot-orange/30 hover:border-brainrot-coral hover:bg-brainrot-peach/30 cursor-pointer"
-                                                    : "border-brainrot-orange/20 bg-brainrot-peach/20 cursor-not-allowed opacity-50"
+                                                    ? "border-border hover:border-primary hover:bg-accent cursor-pointer"
+                                                    : "border-border bg-muted cursor-not-allowed opacity-50"
                                             }`}
                                         >
                                             <div
-                                                className={`text-base font-semibold ${isAllowed ? "text-brainrot-brown" : "text-brainrot-brown/50"}`}
+                                                className={`text-base font-semibold ${isAllowed ? "text-foreground" : "text-muted-foreground"}`}
                                             >
                                                 {size.charAt(0).toUpperCase() +
                                                     size.slice(1)}
                                             </div>
-                                            <div className="text-xs text-foreground/60 mt-1">
+                                            <div className="text-xs text-muted-foreground mt-1">
                                                 {size === "small" && "300px"}
                                                 {size === "medium" && "540px"}
                                                 {size === "large" && "800px"}
                                             </div>
                                             {!isAllowed && (
-                                                <div className="text-xs text-red-500 mt-1">
+                                                <div className="text-xs text-destructive mt-1">
                                                     Limit reached
                                                 </div>
                                             )}
@@ -204,20 +204,20 @@ export function ImageUploadFlow({
                                     onClick={() =>
                                         fileInputRef.current?.click()
                                     }
-                                    className="border-2 border-dashed border-brainrot-orange/30 rounded-lg p-6 text-center hover:border-brainrot-coral transition-colors cursor-pointer bg-white/50"
+                                    className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer bg-muted/40"
                                 >
-                                    <Upload className="h-10 w-10 text-brainrot-orange/60 mx-auto mb-2" />
-                                    <p className="text-brainrot-brown font-medium">
+                                    <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+                                    <p className="text-foreground font-medium">
                                         Click to upload
                                     </p>
-                                    <p className="text-sm text-foreground/60 mt-1">
+                                    <p className="text-sm text-muted-foreground mt-1">
                                         PNG, JPG, JPEG, or GIF (max 10MB)
                                     </p>
                                 </div>
                             ) : (
-                                <div className="flex items-start gap-3 p-3 bg-white/60 border border-brainrot-orange/20 rounded-lg">
+                                <div className="flex items-start gap-3 p-3 bg-card border border-border rounded-lg">
                                     {previewUrl && (
-                                        <div className="w-20 h-20 rounded overflow-hidden bg-brainrot-peach shrink-0">
+                                        <div className="w-20 h-20 rounded overflow-hidden bg-muted shrink-0">
                                             <img
                                                 src={previewUrl}
                                                 alt="Preview"
@@ -226,10 +226,10 @@ export function ImageUploadFlow({
                                         </div>
                                     )}
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-brainrot-brown font-medium truncate text-sm">
+                                        <p className="text-foreground font-medium truncate text-sm">
                                             {selectedFile.name}
                                         </p>
-                                        <p className="text-xs text-foreground/60">
+                                        <p className="text-xs text-muted-foreground">
                                             {(
                                                 selectedFile.size /
                                                 1024 /
@@ -237,7 +237,7 @@ export function ImageUploadFlow({
                                             ).toFixed(2)}{" "}
                                             MB
                                         </p>
-                                        <p className="text-xs text-brainrot-coral mt-1">
+                                        <p className="text-xs text-primary mt-1">
                                             Size: {getSizeLabel(selectedSize!)}
                                         </p>
                                     </div>
@@ -249,7 +249,7 @@ export function ImageUploadFlow({
                                                 setPreviewUrl(null);
                                             }
                                         }}
-                                        className="p-1 text-brainrot-brown/50 hover:text-red-500 transition-colors"
+                                        className="p-1 text-muted-foreground hover:text-destructive transition-colors"
                                     >
                                         <X className="h-5 w-5" />
                                     </button>
@@ -261,9 +261,9 @@ export function ImageUploadFlow({
                     {/* Step 3: Position Selection */}
                     {step === "position" && selectedSize && (
                         <div className="space-y-4">
-                            <div className="flex items-center gap-3 p-3 bg-white/60 border border-brainrot-orange/20 rounded-lg">
+                            <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
                                 {previewUrl && (
-                                    <div className="w-12 h-12 rounded overflow-hidden bg-brainrot-peach shrink-0">
+                                    <div className="w-12 h-12 rounded overflow-hidden bg-muted shrink-0">
                                         <img
                                             src={previewUrl}
                                             alt="Preview"
@@ -272,10 +272,10 @@ export function ImageUploadFlow({
                                     </div>
                                 )}
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-brainrot-brown font-medium text-sm truncate">
+                                    <p className="text-foreground font-medium text-sm truncate">
                                         {selectedFile?.name}
                                     </p>
-                                    <p className="text-xs text-brainrot-coral">
+                                    <p className="text-xs text-primary">
                                         {getSizeLabel(selectedSize)}
                                     </p>
                                 </div>
@@ -283,7 +283,7 @@ export function ImageUploadFlow({
 
                             {/* Position dropdown - simpler layout */}
                             <div>
-                                <Label className="text-brainrot-brown/70 text-sm mb-2 block">
+                                <Label className="text-muted-foreground text-sm mb-2 block">
                                     Select Position
                                 </Label>
                                 <Select
@@ -292,7 +292,7 @@ export function ImageUploadFlow({
                                         setSelectedPosition(v as ImagePosition)
                                     }
                                 >
-                                    <SelectTrigger className="bg-white border-brainrot-orange/30 w-full">
+                                    <SelectTrigger className="w-full">
                                         <SelectValue placeholder="Select position" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -303,7 +303,7 @@ export function ImageUploadFlow({
                                         ))}
                                     </SelectContent>
                                 </Select>
-                                <p className="text-xs text-brainrot-brown/50 mt-2">
+                                <p className="text-xs text-muted-foreground mt-2">
                                     {selectedSize === "small" &&
                                         "Small images appear in the lower right area"}
                                     {selectedSize === "medium" &&
@@ -317,13 +317,9 @@ export function ImageUploadFlow({
                 </div>
 
                 {/* Actions - always visible at bottom */}
-                <div className="flex gap-3 pt-4 border-t border-brainrot-orange/20 sticky bottom-0 bg-background">
+                <div className="flex gap-3 pt-4 border-t border-border sticky bottom-0 bg-background">
                     {step !== "size" && (
-                        <Button
-                            variant="outline"
-                            onClick={handleBack}
-                            className="border-brainrot-brown/30 text-brainrot-brown hover:bg-brainrot-peach/50"
-                        >
+                        <Button variant="outline" onClick={handleBack}>
                             <ArrowLeft className="h-4 w-4 mr-2" />
                             Back
                         </Button>
@@ -333,7 +329,7 @@ export function ImageUploadFlow({
                         <Button
                             variant="outline"
                             onClick={handleReset}
-                            className="flex-1 border-brainrot-brown/30 text-brainrot-brown hover:bg-brainrot-peach/50"
+                            className="flex-1"
                         >
                             Cancel
                         </Button>
@@ -343,7 +339,7 @@ export function ImageUploadFlow({
                         <Button
                             onClick={() => setStep("position")}
                             disabled={!selectedFile}
-                            className="flex-1 bg-brainrot-coral hover:bg-brainrot-coral/90 text-white shadow-lg shadow-brainrot-coral/25"
+                            className="flex-1"
                         >
                             Next
                             <ArrowRight className="h-4 w-4 ml-2" />
@@ -354,7 +350,7 @@ export function ImageUploadFlow({
                         <Button
                             onClick={handleComplete}
                             disabled={!selectedPosition}
-                            className="flex-1 bg-brainrot-coral hover:bg-brainrot-coral/90 text-white shadow-lg shadow-brainrot-coral/25"
+                            className="flex-1"
                         >
                             <Check className="h-4 w-4 mr-2" />
                             Add Image

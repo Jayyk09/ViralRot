@@ -56,7 +56,7 @@ class LocalStorageBackend(StorageBackend):
     
     def generate_url(self, key: str, expires_in: int = 3600) -> str:
         """Generate file:// URL for local file.
-        
+
         Note: expires_in is ignored for local storage as file:// URLs
         don't support expiration. A web server could be added later
         to serve files via HTTP with proper expiration.
@@ -65,18 +65,24 @@ class LocalStorageBackend(StorageBackend):
         return f"file://{file_path.absolute()}"
 
     def generate_background_urls(self) -> List[Dict[str, str]]:
-        """List background videos under backgrounds/ with file:// URLs."""
-        backgrounds_dir = self.base_dir / "backgrounds"
-        if not backgrounds_dir.exists():
-            return []
+        """List background videos uploaded under this backend's own
+        "backgrounds/" prefix, mirroring the R2 backend's behavior.
 
-        items = []
-        for file_path in sorted(backgrounds_dir.glob("*.mp4")):
-            items.append({
-                "id": file_path.stem,
-                "url": f"file://{file_path.absolute()}",
+        Note: this is separate from the app's local background-video
+        catalog (DIRS["background_videos"] in main.py), which is read
+        directly from disk rather than through the storage abstraction -
+        so this will be empty unless files were explicitly uploaded here.
+        """
+        results = []
+        for file_info in self.list_files(prefix="backgrounds/"):
+            key = file_info["key"]
+            if key.endswith("/") or not key.lower().endswith(".mp4"):
+                continue
+            results.append({
+                "id": Path(key).name.replace(".mp4", ""),
+                "url": self.generate_url(key),
             })
-        return items
+        return results
 
     def download(self, key: str, dest_path: str) -> str:
         """Copy an object to a local file path."""

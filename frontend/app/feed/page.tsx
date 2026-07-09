@@ -213,20 +213,20 @@ function FeedContent() {
     }, [filteredVideos.length, activeIndex]);
 
     return (
-        <div className="h-screen bg-black overflow-hidden flex flex-col">
+        <div className="h-screen bg-background overflow-hidden flex flex-col">
             <TopNav
                 variant="app"
                 onCreateClick={() => setIsCreateModalOpen(true)}
             />
 
             {/* Collection/Subject Filter Bar */}
-            <div className="shrink-0 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800">
+            <div className="shrink-0 bg-background/95 backdrop-blur-sm border-b border-border">
                 {selectedCollectionId !== null ? (
                     <div className="px-6 py-4">
-                        <h2 className="text-lg font-semibold text-white">
+                        <h2 className="text-lg font-semibold text-foreground">
                             {collectionData?.title || "Collection"}
                         </h2>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-sm text-muted-foreground">
                             {collectionData?.video_count || 0} videos
                         </p>
                     </div>
@@ -251,8 +251,8 @@ function FeedContent() {
                 {status === "pending" ? (
                     <div className="h-full flex items-center justify-center">
                         <div className="text-center">
-                            <Loader2 className="h-12 w-12 text-indigo-500 animate-spin mx-auto mb-4" />
-                            <p className="text-white text-lg">
+                            <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-4" />
+                            <p className="text-foreground text-lg">
                                 Loading videos...
                             </p>
                         </div>
@@ -260,17 +260,14 @@ function FeedContent() {
                 ) : status === "error" ? (
                     <div className="h-full flex items-center justify-center">
                         <div className="text-center py-20 px-4">
-                            <VideoIcon className="h-16 w-16 text-red-400 mx-auto mb-4" />
-                            <h3 className="text-xl font-semibold text-white mb-2">
+                            <VideoIcon className="h-16 w-16 text-destructive mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-foreground mb-2">
                                 Failed to load videos
                             </h3>
-                            <p className="text-gray-400 mb-6">
+                            <p className="text-muted-foreground mb-6">
                                 {(error as Error)?.message ?? "Unknown error"}
                             </p>
-                            <Button
-                                onClick={() => window.location.reload()}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                            >
+                            <Button onClick={() => window.location.reload()}>
                                 Try Again
                             </Button>
                         </div>
@@ -298,26 +295,23 @@ function FeedContent() {
 
                         {isFetchingNextPage && (
                             <div className="h-full snap-start flex items-center justify-center">
-                                <Loader2 className="h-12 w-12 text-indigo-500 animate-spin" />
+                                <Loader2 className="h-12 w-12 text-primary animate-spin" />
                             </div>
                         )}
                     </>
                 ) : (
                     <div className="h-full snap-start flex items-center justify-center">
                         <div className="text-center py-20 px-4">
-                            <VideoIcon className="h-16 w-16 text-indigo-300 mx-auto mb-4" />
-                            <h3 className="text-xl font-semibold text-white mb-2">
+                            <VideoIcon className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-foreground mb-2">
                                 {selectedSubject === "all"
                                     ? "No videos yet"
                                     : `No videos in ${selectedSubject}`}
                             </h3>
-                            <p className="text-gray-400 mb-6">
-                                Create your first video to get started!
+                            <p className="text-muted-foreground mb-6">
+                                Create your first video to get started.
                             </p>
-                            <Button
-                                onClick={() => setIsCreateModalOpen(true)}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                            >
+                            <Button onClick={() => setIsCreateModalOpen(true)}>
                                 <Plus className="h-4 w-4 mr-2" />
                                 Create Video
                             </Button>
@@ -337,10 +331,10 @@ function FeedContent() {
 
 function FeedLoading() {
     return (
-        <div className="h-screen bg-black flex items-center justify-center">
+        <div className="h-screen bg-background flex items-center justify-center">
             <div className="text-center">
-                <Loader2 className="h-12 w-12 text-indigo-500 animate-spin mx-auto mb-4" />
-                <p className="text-white text-lg">Loading...</p>
+                <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-4" />
+                <p className="text-foreground text-lg">Loading...</p>
             </div>
         </div>
     );

@@ -14,7 +14,7 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 from services.video_service import VideoService
 from services.collection_service import create_collection, get_collection
 from storage.assets import get_asset, list_asset_keys
@@ -200,6 +200,48 @@ def _build_educational_images_list(
     return educational_images
 
 
+def generate_audio_for_dialogue(
+    dialogue: List[Dict[str, Any]],
+    audio_dir: Path | str,
+    slug: str = "dialogue",
+) -> Dict[str, Any]:
+    """
+    Generate and concatenate TTS audio for a dialogue, independent of rendering.
+
+    Shared by the standalone audio-generation job and generate_video_from_dialogue,
+    so the "audio is fully finalized before the editor loads" pipeline shape and
+    the legacy all-in-one path stay in sync on exactly one implementation.
+
+    Args:
+        dialogue: List of dialogue line dicts (caption/speaker/emotion)
+        audio_dir: Directory to store generated audio assets
+        slug: Filesystem-safe name for this dialogue's audio files
+
+    Returns:
+        Dict with audio_file, total_duration, timings, word_timestamps
+        (see concatenate_audio_segments for the exact shape)
+    """
+    audio_dir = Path(audio_dir)
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    transcripts_payload = {"transcripts": dialogue}
+    segment_dir = audio_dir / slug / "segments"
+    segment_dir.mkdir(parents=True, exist_ok=True)
+
+    print("🎙️  Generating audio segments…")
+    audio_segments = generate_audio_from_transcript(
+        transcripts_payload,
+        output_dir=str(segment_dir),
+    )
+
+    audio_output = audio_dir / f"{slug}_full.mp3"
+    print("🔗 Concatenating audio segments…")
+    return concatenate_audio_segments(
+        audio_segments,
+        output_file=str(audio_output),
+    )
+
+
 def generate_video_from_dialogue(
     dialogue_data: Dict[str, Any],
     background_video: Optional[Path | str],
@@ -305,31 +347,18 @@ def generate_video_from_dialogue(
         collection_id = create_collection(user_id, collection_title)
         print(f"\n✨ Created collection: '{collection_title}' (ID: {collection_id})")
 
-    # Step 2: Generate audio
-    transcripts_payload = {"transcripts": dialogue}
-
-    segment_dir = audio_dir / slug / "segments"
-    segment_dir.mkdir(parents=True, exist_ok=True)
-
-    # === PROGRESS: Audio generation ===
+    # Step 2: Generate audio (shared with the standalone audio-generation job)
     if progress_callback and job_id:
         progress_callback(
             job_id=job_id,
             current_stage="audio_generation",
             title=title,
         )
-    
-    print("🎙️  Generating audio segments…")
-    audio_segments = generate_audio_from_transcript(
-        transcripts_payload,
-        output_dir=str(segment_dir),
-    )
 
-    audio_output = audio_dir / f"{slug}_full.mp3"
-    print("🔗 Concatenating audio segments…")
-    audio_result = concatenate_audio_segments(
-        audio_segments,
-        output_file=str(audio_output),
+    audio_result = generate_audio_for_dialogue(
+        dialogue=dialogue,
+        audio_dir=audio_dir,
+        slug=slug,
     )
 
     # Build educational images list if image_dir is provided

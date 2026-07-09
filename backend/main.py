@@ -5,21 +5,28 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 from uuid import uuid4
 
+import requests
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
 from typing import Literal
 
 from services.audio_service import AudioService
-from services.video_service import get_collection_videos
-from services.collection_service import get_collection, get_user_collections, find_last_collection
+from services.video_service import VideoService, get_collection_videos
+from services.collection_service import create_collection, get_collection, get_user_collections, find_last_collection
 from services.progress_service import ProgressService, set_event_loop
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import (
     generate_video_from_dialogue,
+    generate_audio_for_dialogue,
+    get_background_video,
+    get_background_video_from_storage,
+    slugify,
 )
+from backend_pipeline.video_assembly.ffMpeg import create_video_with_audio_and_captions
 
 from storage.factory import get_storage_backend
 
@@ -715,6 +722,269 @@ async def _process_video_job(
                 shutil.rmtree(image_path, ignore_errors=True)
 
 
+# ============ Audio-Only Generation + Minimal Export (Phase 1 pipeline split) ============
+#
+# These two endpoints split the monolithic /jobs/generate-video job in two:
+# generate-audio finalizes narration + real timing data (no rendering), and
+# export-video renders from that already-finalized audio (no TTS calls). This
+# lets the frontend editor load real per-line/per-word timing before any
+# overlay editing begins, instead of only having a duration estimate.
+
+@app.post("/jobs/generate-audio")
+async def create_audio_job(
+    background_tasks: BackgroundTasks,
+    user_id: int = Form(1),
+    video: str = Form(..., description="Background video name (matches a file in the catalog)"),
+    transcript: str = Form(..., description="Dialogue JSON, same shape as /jobs/generate-video"),
+):
+    """
+    Generate narration audio + line/word timings from a dialogue transcript
+    (ASYNC with progress tracking) - no final video is rendered here.
+
+    Workflow:
+    1. POST to this endpoint with transcript JSON and a background video name
+    2. Poll GET /jobs/{job_id}/progress (or connect to the WebSocket)
+    3. On completion, result contains everything the editor needs to preview
+       and, later, export - no further TTS calls happen after this.
+
+    Stages:
+    - tts_generation: Per-line MiniMax TTS calls
+    - concatenation: Stitch segments into one audio file, compute timings
+    - uploading: Upload narration audio to storage
+
+    Result format on completion:
+        { "audio_url", "line_timings", "word_timestamps", "background_video_url" }
+    """
+    try:
+        transcript_data = json.loads(transcript)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid transcript JSON")
+
+    dialogue_data = transcript_data.get("dialogue") or transcript_data.get("dialogue_data")
+    if not dialogue_data:
+        raise HTTPException(status_code=400, detail="Transcript contains no dialogue data")
+
+    dialogue_title = dialogue_data.get("title", "Untitled Dialogue")
+
+    job_id = ProgressService.create_audio_job(user_id=user_id, dialogue_title=dialogue_title)
+
+    background_tasks.add_task(
+        _process_audio_job,
+        job_id=job_id,
+        user_id=user_id,
+        video=video,
+        dialogue_data=dialogue_data,
+    )
+
+    return {
+        "job_id": job_id,
+        "job_type": "audio_generation",
+        "dialogue_title": dialogue_title,
+        "message": "Audio generation started. Connect to WebSocket for progress.",
+        "websocket_url": f"/ws/progress/{job_id}",
+        "status_url": f"/jobs/{job_id}/progress",
+    }
+
+
+async def _process_audio_job(
+    job_id: str,
+    user_id: int,
+    video: str,
+    dialogue_data: dict,
+):
+    """Background task: TTS + concatenation only, no ffmpeg rendering."""
+    try:
+        _validate_background_video()
+
+        ProgressService.update_job(job_id=job_id, status="processing", current_stage="tts_generation")
+        await asyncio.sleep(0.1)
+
+        dialogue = dialogue_data.get("dialogue") or []
+        if not dialogue:
+            raise ValueError("No dialogue found in transcript.")
+
+        title = dialogue_data.get("title", "Untitled Dialogue")
+        slug = slugify(title)
+        session_id = uuid4().hex
+        audio_output_dir = DIRS["generated_audio"] / f"job_{session_id}"
+
+        audio_result = await _run_blocking(
+            generate_audio_for_dialogue,
+            dialogue,
+            audio_output_dir,
+            slug,
+        )
+
+        ProgressService.update_job(job_id=job_id, current_stage="concatenation")
+
+        # Resolve the exact background file (get_background_video does fuzzy name
+        # matching) so the presigned URL points at the same file used for export.
+        background_path = await _run_blocking(_resolve_background_video, video)
+
+        ProgressService.update_job(job_id=job_id, current_stage="uploading")
+
+        storage = get_storage_backend()
+        if storage.backend_name.startswith("Local"):
+            # Local backend never uploads backgrounds into its own storage
+            # dir - they're read straight from DIRS["background_videos"] -
+            # so presigning a "backgrounds/" key would point at a file that
+            # doesn't exist. Serve the real path directly instead.
+            background_video_url = f"file://{background_path.absolute()}"
+        else:
+            background_video_url = storage.generate_url(f"backgrounds/{background_path.name}")
+
+        audio_storage_key = f"audio/{user_id}/{session_id}.mp3"
+        with open(audio_result["audio_file"], "rb") as audio_file:
+            storage.upload(audio_file, audio_storage_key, {"content_type": "audio/mpeg"})
+        audio_url = storage.generate_url(audio_storage_key)
+
+        ProgressService.update_job(
+            job_id=job_id,
+            status="completed",
+            result={
+                "audio_url": audio_url,
+                "line_timings": audio_result["timings"],
+                "word_timestamps": audio_result["word_timestamps"],
+                "background_video_url": background_video_url,
+            },
+        )
+
+    except Exception as e:
+        import traceback
+        print(f"❌ AUDIO GENERATION ERROR: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        ProgressService.update_job(
+            job_id=job_id,
+            status="failed",
+            error=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@app.post("/jobs/export-video")
+async def create_export_job(
+    background_tasks: BackgroundTasks,
+    user_id: int = Form(1),
+    video: str = Form(..., description="Background video name (same catalog entry used for generate-audio)"),
+    audio_url: str = Form(..., description="URL of the already-generated narration audio from /jobs/generate-audio"),
+    line_timings: str = Form(..., description="JSON list of {start, end, caption, speaker, emotion} from /jobs/generate-audio"),
+    karaoke_captions: bool = Form(True),
+):
+    """
+    Render the final video from already-generated audio + timings (ASYNC with
+    progress tracking) - no TTS calls happen here.
+
+    This is Phase 1 of the export endpoint: no overlay images/videos yet
+    (that's added in Phase 2, into this same request). It exists to validate
+    that the generate-audio -> preview -> export split works end-to-end.
+    """
+    try:
+        timings = json.loads(line_timings)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid line_timings JSON")
+
+    job_id = ProgressService.create_video_job(user_id=user_id, dialogue_title="Export")
+
+    background_tasks.add_task(
+        _process_export_job,
+        job_id=job_id,
+        user_id=user_id,
+        video=video,
+        audio_url=audio_url,
+        timings=timings,
+        karaoke_captions=karaoke_captions,
+    )
+
+    return {
+        "job_id": job_id,
+        "job_type": "video_generation",
+        "message": "Export started. Connect to WebSocket for progress.",
+        "websocket_url": f"/ws/progress/{job_id}",
+        "status_url": f"/jobs/{job_id}/progress",
+    }
+
+
+async def _process_export_job(
+    job_id: str,
+    user_id: int,
+    video: str,
+    audio_url: str,
+    timings: list,
+    karaoke_captions: bool,
+):
+    """Background task: download the already-generated audio, composite with ffmpeg, upload."""
+    session_id = uuid4().hex
+    export_dir = DIRS["output"] / f"export_{session_id}"
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        _validate_background_video()
+        ProgressService.update_job(job_id=job_id, status="processing", current_stage="preparing_assets")
+
+        background_path = await _run_blocking(_resolve_background_video, video)
+
+        local_audio_path = export_dir / "narration.mp3"
+        parsed_audio_url = urlparse(audio_url)
+        if parsed_audio_url.scheme == "file":
+            # Local storage backend - already on disk, no network round-trip
+            local_audio_path.write_bytes(Path(parsed_audio_url.path).read_bytes())
+        else:
+            response = await _run_blocking(requests.get, audio_url, timeout=30)
+            response.raise_for_status()
+            local_audio_path.write_bytes(response.content)
+
+        ProgressService.update_job(job_id=job_id, current_stage="video_assembly")
+
+        video_output = export_dir / "final_video.mp4"
+        caption_mode = "karaoke" if karaoke_captions else "box"
+        video_path = await _run_blocking(
+            create_video_with_audio_and_captions,
+            background_video=str(background_path),
+            audio_file=str(local_audio_path),
+            caption_timings=timings,
+            output_file=str(video_output),
+            educational_images=None,  # Phase 2 adds overlays here
+            caption_mode=caption_mode,
+        )
+
+        ProgressService.update_job(job_id=job_id, current_stage="uploading")
+
+        collection_id = create_collection(user_id, "Export")
+        video_service = VideoService()
+        with open(video_path, "rb") as video_file:
+            result = video_service.save_video(
+                user_id=user_id,
+                file_obj=video_file,
+                original_filename="final_video.mp4",
+                title="Exported Video",
+                description="Exported without overlays (Phase 1)",
+                collection_id=collection_id,
+            )
+
+        ProgressService.update_job(
+            job_id=job_id,
+            status="completed",
+            result={
+                "collection_id": collection_id,
+                "video_id": result["video_id"],
+                "access_url": result["access_url"],
+                "storage_key": result["storage_key"],
+            },
+        )
+
+    except Exception as e:
+        import traceback
+        print(f"❌ EXPORT ERROR: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        ProgressService.update_job(
+            job_id=job_id,
+            status="failed",
+            error=f"{type(e).__name__}: {str(e)}",
+        )
+
+    finally:
+        shutil.rmtree(export_dir, ignore_errors=True)
+
+
 # ============ Generate Audio from Dialogue
 
 audioService = AudioService()
@@ -745,6 +1015,14 @@ async def batch_process_dialouge_generation(batch_request: BatchAudioRequest):
 
 
 # ============ Helper Functions ============
+
+def _resolve_background_video(video: Optional[str]) -> Path:
+    """Pick a background video from the local dir if populated, else storage."""
+    local_dir = DIRS["background_videos"]
+    if local_dir.exists() and list(local_dir.glob("*.mp4")):
+        return get_background_video(local_dir, video)
+    return get_background_video_from_storage(video)
+
 
 def _validate_background_video():
     """Validate that background videos are available (local dir or storage)."""

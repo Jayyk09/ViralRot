@@ -1,6 +1,6 @@
 import React from "react";
 import type { Metadata } from "next";
-import { Space_Grotesk, Inter } from "next/font/google";
+import { Space_Grotesk, Inter, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -10,11 +10,15 @@ const _spaceGrotesk = Space_Grotesk({
     variable: "--font-heading",
 });
 const _inter = Inter({ subsets: ["latin"] });
+const _geistMono = Geist_Mono({
+    subsets: ["latin"],
+    variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
-    title: "Generate Brainrot - Create Viral Brainrot Videos",
+    title: "EduRot — Generate Short-Form Video at Scale",
     description:
-        "Create viral brainrot videos with Peter & Stewie audio, Subway Surfer gameplay, satisfying backgrounds, and auto-captions. Maximum brain damage guaranteed.",
+        "Turn any source into a fully-voiced, captioned, edited short-form video. AI narration, precision timing, and instant export — built for creators who ship.",
     generator: "v0.app",
     icons: {
         icon: [
@@ -41,8 +45,10 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en">
-            <body className={`font-sans antialiased ${_spaceGrotesk.variable}`}>
+        <html lang="en" className="dark">
+            <body
+                className={`font-sans antialiased ${_spaceGrotesk.variable} ${_geistMono.variable}`}
+            >
                 <Providers>{children}</Providers>
                 <Analytics />
             </body>
