@@ -30,7 +30,7 @@ class VideoRepository:
         
         Args:
             user_id: Owner user ID
-            storage_key: Storage key (S3 key or local path)
+            storage_key: Storage key (R2 key or local path)
             title: Video title
             description: Video description
             collection_id: Optional collection ID

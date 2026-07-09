@@ -15,7 +15,7 @@ from storage import get_storage_backend
 class AudioService:
     """High-level audio operations combining storage and TTS generation.
 
-    This service combines storage operations (S3 or local) with audio generation
+    This service combines storage operations (R2 or local) with audio generation
     to provide a clean, unified interface for creating and managing audio files.
 
     Usage:
@@ -34,7 +34,7 @@ class AudioService:
         """Initialize audio service.
 
         Args:
-            storage_backend: Override storage backend ('s3' or 'local').
+            storage_backend: Override storage backend ('r2' or 'local').
                 If None, uses environment configuration.
         """
         if storage_backend:

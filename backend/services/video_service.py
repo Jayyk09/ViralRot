@@ -15,7 +15,7 @@ from .repositories.video_repository import VideoRepository
 class VideoService:
     """High-level video operations (storage + database).
     
-    This service combines storage operations (S3 or local) with
+    This service combines storage operations (R2 or local) with
     database operations to provide a clean, unified interface
     for video management.
     
@@ -41,7 +41,7 @@ class VideoService:
         Initialize video service.
         
         Args:
-            storage_backend: Override storage backend ('s3' or 'local').
+            storage_backend: Override storage backend ('r2' or 'local').
                            If None, uses environment configuration.
         """
         if storage_backend:

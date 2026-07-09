@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Cleanup Script: Delete all videos and collections from database and S3.
+Cleanup Script: Delete all videos and collections from database and R2.
 
 This script performs a complete cleanup of:
-1. All videos from S3 storage
+1. All videos from R2 storage
 2. All videos from the database
 3. All collections from the database
 
@@ -83,12 +83,12 @@ def get_all_collections() -> List[Dict[str, Any]]:
 
 
 def delete_video_from_s3(storage_key: str, storage) -> bool:
-    """Delete a video from S3 storage."""
+    """Delete a video from R2 storage."""
     try:
         storage.delete(storage_key)
         return True
     except Exception as e:
-        print(f"    Warning: Failed to delete S3 key '{storage_key}': {e}")
+        print(f"    Warning: Failed to delete storage key '{storage_key}': {e}")
         return False
 
 
@@ -139,7 +139,7 @@ def backup_to_json(videos: List[Dict], collections: List[Dict], backup_dir: Path
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Delete all videos and collections from database and S3"
+        description="Delete all videos and collections from database and R2"
     )
     parser.add_argument(
         "--execute",
@@ -185,7 +185,7 @@ def main():
     print("-" * 40)
     for video in videos[:10]:  # Show first 10
         print(f"  ID: {video['id']}, Title: {video['title'][:40] if video['title'] else 'N/A'}...")
-        print(f"      S3 Key: {video['storage_key']}")
+        print(f"      Storage Key: {video['storage_key']}")
     if len(videos) > 10:
         print(f"  ... and {len(videos) - 10} more")
     print()
@@ -220,13 +220,13 @@ def main():
         print(f"  Using: {storage.backend_name}")
     except Exception as e:
         print(f"  Warning: Could not initialize storage backend: {e}")
-        print("  Will only delete from database, S3 files will remain")
+        print("  Will only delete from database, storage files will remain")
         storage = None
     print()
     
-    # Delete from S3
+    # Delete from storage
     if storage and videos:
-        print("Deleting videos from S3...")
+        print("Deleting videos from R2...")
         s3_deleted = 0
         s3_failed = 0
         for video in videos:
@@ -253,7 +253,7 @@ def main():
     print("=" * 60)
     print("CLEANUP COMPLETE")
     print("=" * 60)
-    print(f"  Videos deleted from S3: {s3_deleted if storage else 'N/A'}")
+    print(f"  Videos deleted from storage: {s3_deleted if storage else 'N/A'}")
     print(f"  Videos deleted from DB: {videos_deleted}")
     print(f"  Collections deleted from DB: {collections_deleted}")
     if args.backup:
