@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 from services.video_service import VideoService
 from services.collection_service import create_collection, get_collection
+from storage.assets import get_asset, list_asset_keys
 
 from backend_pipeline.audio_generation.minimax_tts import (
     generate_audio_from_transcript,
@@ -35,18 +36,18 @@ def slugify(value: str) -> str:
 
 def get_background_video(videos_dir: Path | str, video: Optional[str]) -> Path:
     """
-    Randomly select a background video from the videos directory.
+    Randomly select a background video from a local videos directory.
     If "video" provided then select a video that matches the name else select a random video
     Returns the path to the selected video.
     """
     videos_path = Path(videos_dir)
-    
+
     if not videos_path.exists():
         raise FileNotFoundError(f"Background videos directory not found at {videos_dir}")
-    
+
     # Get all .mp4 files from the videos directory
     video_files = list(videos_path.glob("*.mp4"))
-    
+
     if not video_files or video_files == None:
         raise FileNotFoundError(f"No background videos found in {videos_dir}")
 
@@ -54,14 +55,36 @@ def get_background_video(videos_dir: Path | str, video: Optional[str]) -> Path:
         matching_videos = [f for f in video_files if video in f.name.lower()]
     else:
         matching_videos = []
-        
+
     if matching_videos:
         selected_video = matching_videos[0]
     else:
         # Randomly select one video
         selected_video = random.choice(video_files)
-    
+
     return selected_video
+
+
+def get_background_video_from_storage(video: Optional[str]) -> Path:
+    """
+    Select a background video from storage (backgrounds/ prefix) and
+    return a cached local path for ffmpeg.
+
+    If "video" provided then select a video that matches the name else
+    select a random video.
+    """
+    keys = [k for k in list_asset_keys("backgrounds/") if k.endswith(".mp4")]
+
+    if not keys:
+        raise FileNotFoundError("No background videos found in storage under 'backgrounds/'")
+
+    if video:
+        matching = [k for k in keys if video in Path(k).name.lower()]
+    else:
+        matching = []
+
+    selected_key = matching[0] if matching else random.choice(keys)
+    return get_asset(selected_key)
 
 
 def load_dialogue(path: Path) -> Dict[str, Any]:
@@ -179,7 +202,7 @@ def _build_educational_images_list(
 
 def generate_video_from_dialogue(
     dialogue_data: Dict[str, Any],
-    background_video: Path | str,
+    background_video: Optional[Path | str],
     output_dir: Path | str,
     audio_dir: Path | str,
     user_id: int,
@@ -196,13 +219,15 @@ def generate_video_from_dialogue(
 
     Args:
         dialogue_data: Dictionary with 'title' and 'dialogue' keys
-        background_video: Path to background video or directory of videos
+        background_video: Path to background video or directory of videos.
+                          If None (or a directory with no videos), selects from
+                          storage under the backgrounds/ prefix.
         output_dir: Directory to store generated video
         audio_dir: Directory to store generated audio assets
         user_id: User ID for database entry
         collection_id: Optional existing collection ID. If not provided, creates new collection.
         image_dir: Optional directory containing educational images referenced in dialogue
-        storage_backend: Storage backend override ('s3' or 'local'). Uses env var if not set.
+        storage_backend: Storage backend override ('r2' or 'local'). Uses env var if not set.
         progress_callback: Optional callback function for progress updates.
                           Called with (job_id, current_stage, title)
         job_id: Job ID for progress tracking (required if progress_callback is provided)
@@ -211,7 +236,7 @@ def generate_video_from_dialogue(
     Returns:
         Dictionary with video info including video_id, storage_key, collection_id
     """
-    background_video_path = Path(background_video)
+    background_video_path = Path(background_video) if background_video else None
     output_dir = Path(output_dir)
     audio_dir = Path(audio_dir)
     image_dir_path = Path(image_dir) if image_dir else None
@@ -247,9 +272,6 @@ def generate_video_from_dialogue(
     output_dir.mkdir(parents=True, exist_ok=True)
     audio_dir.mkdir(parents=True, exist_ok=True)
 
-    # Determine if background_video is a directory or a single file
-    is_directory = background_video_path.is_dir()
-
     # === PROGRESS: Preparing assets ===
     if progress_callback and job_id:
         progress_callback(
@@ -257,13 +279,16 @@ def generate_video_from_dialogue(
             current_stage="preparing_assets",
             title=title,
         )
-    
-    # Select background video
-    if is_directory:
-            current_bg_video = get_background_video(background_video_path, video)
-            print(f"Background video selected: {current_bg_video}")
-    else:
+
+    # Select background video: explicit file > local directory > storage
+    if background_video_path and background_video_path.is_file():
         current_bg_video = background_video_path
+    elif background_video_path and background_video_path.is_dir() and list(background_video_path.glob("*.mp4")):
+        current_bg_video = get_background_video(background_video_path, video)
+        print(f"Background video selected: {current_bg_video}")
+    else:
+        current_bg_video = get_background_video_from_storage(video)
+        print(f"Background video selected from storage: {current_bg_video}")
     
     slug = slugify(title)
     print(f"\n=== Generating video: {title} ===")

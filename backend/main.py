@@ -504,7 +504,7 @@ async def create_video_job(
     - preparing_assets: Process uploaded images
     - audio_generation: Create TTS audio with MiniMax
     - video_assembly: FFmpeg overlay with captions
-    - uploading: Upload to S3
+    - uploading: Upload to R2
 
     Returns:
         job_id: Use with /ws/progress/{job_id} for real-time updates
@@ -747,19 +747,22 @@ async def batch_process_dialouge_generation(batch_request: BatchAudioRequest):
 # ============ Helper Functions ============
 
 def _validate_background_video():
-    """Validate that the background videos directory exists and has videos."""
-    if not DIRS["background_videos"].exists():
-        raise HTTPException(
-            status_code=500,
-            detail=f"Background videos directory not found at {DIRS['background_videos']}",
-        )
-    
-    video_files = list(DIRS["background_videos"].glob("*.mp4"))
-    if not video_files:
-        raise HTTPException(
-            status_code=500,
-            detail=f"No background videos found in {DIRS["background_videos"]}",
-        )
+    """Validate that background videos are available (local dir or storage)."""
+    local_dir = DIRS["background_videos"]
+    if local_dir.exists() and list(local_dir.glob("*.mp4")):
+        return
+
+    storage = get_storage_backend()
+    if any(key.endswith(".mp4") for key in storage.iter_keys("backgrounds/")):
+        return
+
+    raise HTTPException(
+        status_code=500,
+        detail=(
+            f"No background videos found in {local_dir} "
+            f"or in storage under 'backgrounds/'"
+        ),
+    )
 
 
 def _move_upload_to_disk(upload: UploadFile, destination: Path):
