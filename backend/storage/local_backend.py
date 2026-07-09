@@ -2,7 +2,7 @@
 import os
 import shutil
 from pathlib import Path
-from typing import BinaryIO, Dict, Any, List
+from typing import BinaryIO, Dict, Any, List, Iterator
 from datetime import datetime
 
 from .base import StorageBackend
@@ -63,7 +63,38 @@ class LocalStorageBackend(StorageBackend):
         """
         file_path = self._get_path(key)
         return f"file://{file_path.absolute()}"
-    
+
+    def generate_background_urls(self) -> List[Dict[str, str]]:
+        """List background videos under backgrounds/ with file:// URLs."""
+        backgrounds_dir = self.base_dir / "backgrounds"
+        if not backgrounds_dir.exists():
+            return []
+
+        items = []
+        for file_path in sorted(backgrounds_dir.glob("*.mp4")):
+            items.append({
+                "id": file_path.stem,
+                "url": f"file://{file_path.absolute()}",
+            })
+        return items
+
+    def download(self, key: str, dest_path: str) -> str:
+        """Copy an object to a local file path."""
+        file_path = self._get_path(key)
+        if not file_path.exists():
+            raise FileNotFoundError(f"Key not found: {key}")
+        shutil.copyfile(file_path, dest_path)
+        return dest_path
+
+    def iter_keys(self, prefix: str = "") -> Iterator[str]:
+        """Yield all keys under a prefix."""
+        search_path = self.base_dir / prefix if prefix else self.base_dir
+        if not search_path.exists():
+            return
+        for file_path in search_path.rglob("*"):
+            if file_path.is_file():
+                yield str(file_path.relative_to(self.base_dir))
+
     def delete(self, key: str) -> bool:
         """Delete file from local filesystem."""
         file_path = self._get_path(key)

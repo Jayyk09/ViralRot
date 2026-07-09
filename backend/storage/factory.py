@@ -3,7 +3,7 @@ import os
 from typing import Optional
 
 from .base import StorageBackend
-from .s3_backend import S3StorageBackend
+from .r2_backend import R2StorageBackend
 from .local_backend import LocalStorageBackend
 
 # Singleton storage instance
@@ -16,63 +16,79 @@ def get_storage_backend(
 ) -> StorageBackend:
     """
     Get configured storage backend (singleton pattern).
-    
+
     Args:
-        backend_type: Override backend type ('s3' or 'local'). 
+        backend_type: Override backend type ('r2' or 'local').
                       If None, uses STORAGE_BACKEND env var.
         force_new: Force creation of new instance (for testing or CLI override)
-    
+
     Returns:
         Configured StorageBackend instance
-    
+
     Environment Variables:
-        STORAGE_BACKEND: 's3' or 'local' (default: 's3')
-        S3_BUCKET_NAME: S3 bucket name (default: 'emory-hacks-video-bucket')
-        AWS_DEFAULT_REGION: AWS region (default: 'us-east-2')
+        STORAGE_BACKEND: 'r2' or 'local' (default: 'r2')
+        R2_ACCOUNT_ID: Cloudflare account ID
+        R2_ACCESS_KEY_ID: R2 API token access key ID
+        R2_SECRET_ACCESS_KEY: R2 API token secret access key
+        R2_BUCKET_NAME: R2 bucket name
         LOCAL_STORAGE_DIR: Local storage directory (default: 'storage/videos')
-    
+
     Examples:
         # Use default from environment
         storage = get_storage_backend()
-        
+
         # Force local storage for development
         storage = get_storage_backend(backend_type="local", force_new=True)
-        
-        # Force S3 storage
-        storage = get_storage_backend(backend_type="s3", force_new=True)
+
+        # Force R2 storage
+        storage = get_storage_backend(backend_type="r2", force_new=True)
     """
     global _storage_instance
-    
+
     # Use cached instance if available and not forcing new
     if _storage_instance is not None and not force_new and backend_type is None:
         return _storage_instance
-    
+
     # Determine backend type
     if backend_type is None:
-        backend_type = os.getenv("STORAGE_BACKEND", "s3").lower()
+        backend_type = os.getenv("STORAGE_BACKEND", "r2").lower()
     else:
         backend_type = backend_type.lower()
-    
+
     # Create appropriate backend
-    if backend_type == "s3":
-        bucket = os.getenv("S3_BUCKET_NAME", "emory-hacks-video-bucket")
-        region = os.getenv("AWS_DEFAULT_REGION", "us-east-2")
-        instance = S3StorageBackend(bucket, region)
-    
+    if backend_type == "r2":
+        required = {
+            "R2_ACCOUNT_ID": os.getenv("R2_ACCOUNT_ID"),
+            "R2_ACCESS_KEY_ID": os.getenv("R2_ACCESS_KEY_ID"),
+            "R2_SECRET_ACCESS_KEY": os.getenv("R2_SECRET_ACCESS_KEY"),
+            "R2_BUCKET_NAME": os.getenv("R2_BUCKET_NAME"),
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise ValueError(
+                f"R2 storage backend requires environment variables: {', '.join(missing)}"
+            )
+        instance = R2StorageBackend(
+            bucket_name=required["R2_BUCKET_NAME"],
+            account_id=required["R2_ACCOUNT_ID"],
+            access_key_id=required["R2_ACCESS_KEY_ID"],
+            secret_access_key=required["R2_SECRET_ACCESS_KEY"],
+        )
+
     elif backend_type == "local":
         base_dir = os.getenv("LOCAL_STORAGE_DIR", "storage/videos")
         instance = LocalStorageBackend(base_dir)
-    
+
     else:
         raise ValueError(
             f"Unknown storage backend: '{backend_type}'. "
-            f"Valid options: 's3', 'local'"
+            f"Valid options: 'r2', 'local'"
         )
-    
+
     # Cache instance if using default (from environment)
     if not force_new:
         _storage_instance = instance
-    
+
     return instance
 
 

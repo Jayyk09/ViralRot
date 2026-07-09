@@ -1,13 +1,13 @@
 """Abstract base class for storage backends."""
 from abc import ABC, abstractmethod
-from typing import BinaryIO, Dict, Any, List
+from typing import BinaryIO, Dict, Any, List, Iterator
 
 
 class StorageBackend(ABC):
     """Abstract interface for video storage backends.
-    
+
     All storage backends must implement these methods to ensure
-    consistent behavior across S3, local filesystem, and any
+    consistent behavior across R2, local filesystem, and any
     future storage providers.
     """
     
@@ -36,19 +36,49 @@ class StorageBackend(ABC):
             expires_in: URL expiration time in seconds (default: 1 hour)
         
         Returns:
-            Temporary access URL (presigned URL for S3, file:// for local)
+            Temporary access URL (presigned URL for R2, file:// for local)
         """
         pass
-    
+
     @abstractmethod
     def generate_background_urls(self) -> list[Dict[str, str]]:
         """
         Generate temporary access URLs for background videos.
-        
+
         Returns:
             List of id, URL dicts.
             Id is the file name.
-            URL is the temporary access URL (presigned URL for S3, file:// for local)
+            URL is the temporary access URL (presigned URL for R2, file:// for local)
+        """
+        pass
+
+    @abstractmethod
+    def download(self, key: str, dest_path: str) -> str:
+        """
+        Download an object to a local file path.
+
+        Args:
+            key: Storage key of the file
+            dest_path: Local filesystem path to write to
+
+        Returns:
+            dest_path
+
+        Raises:
+            FileNotFoundError: If key doesn't exist
+        """
+        pass
+
+    @abstractmethod
+    def iter_keys(self, prefix: str = "") -> Iterator[str]:
+        """
+        Yield all object keys under a prefix (no pagination limit).
+
+        Args:
+            prefix: Filter keys by prefix (e.g., "backgrounds/")
+
+        Yields:
+            Object keys
         """
         pass
          
