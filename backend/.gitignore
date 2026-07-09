@@ -4,6 +4,7 @@ venv/
 assets/*
 !assets/characters/
 !assets/videos/
+!assets/fonts/
 **/__pycache__/
 **/**/__pycache__/
 *.pyc

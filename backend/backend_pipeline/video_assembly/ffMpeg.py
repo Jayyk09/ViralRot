@@ -4,6 +4,17 @@ import textwrap
 from pathlib import Path
 from backend_pipeline.video_assembly.ass_generator import generate_ass_subtitle_file
 
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+FONTS_DIR = BACKEND_DIR / "assets" / "fonts"
+
+
+def get_caption_font() -> str:
+    """Path to the bold caption font (CAPTION_FONT_PATH env overrides the bundled font)."""
+    override = os.getenv("CAPTION_FONT_PATH")
+    if override:
+        return override
+    return str(FONTS_DIR / "LiberationSans-Bold.ttf")
+
 # ============ Image Size and Position Constants ============
 IMAGE_SIZES = {
     "small": 300,   # Icon-size images, staggered in lower right half
@@ -103,23 +114,34 @@ def wrap_caption_text(text, max_chars=32):
 def get_character_image(speaker, emotion):
     """
     Get the character image path based on speaker and emotion.
-    
+
+    Looks for the image bundled in assets/characters first, then falls
+    back to fetching it from storage (key: assets/characters/<file>).
+
     Args:
         speaker: "PETER" or "STEWIE"
         emotion: "neutral", "angry", "excited", or "confused"
-    
+
     Returns:
-        Path to the character image file
+        Path to the character image file (may not exist if unavailable
+        both locally and in storage — callers check existence)
     """
-    BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
-    base_path =  BACKEND_DIR / "assets" / "characters"
     speaker_lower = speaker.lower()
-    
-    # Map emotion to image file
+
     if emotion == "neutral" or not emotion:
-        return str(base_path / f"{base_path}/{speaker_lower}.png") 
+        filename = f"{speaker_lower}.png"
     else:
-        return str(base_path / f"/{speaker_lower}_{emotion}.png")
+        filename = f"{speaker_lower}_{emotion}.png"
+
+    local_path = BACKEND_DIR / "assets" / "characters" / filename
+    if local_path.exists():
+        return str(local_path)
+
+    try:
+        from storage.assets import get_asset
+        return str(get_asset(f"assets/characters/{filename}"))
+    except (FileNotFoundError, ValueError):
+        return str(local_path)
 
 
 def merge_consecutive_educational_images(educational_images):
@@ -321,7 +343,7 @@ def create_video_with_audio_and_captions(
             # Create drawtext filter for this caption with manual wrapping
             caption_filter = (
                 f"drawtext=text='{caption_text}':"
-                f"fontfile=/System/Library/Fonts/Supplemental/Arial Bold.ttf:"
+                f"fontfile={get_caption_font()}:"
                 f"fontsize=54:"
                 f"fontcolor={color}:"
                 f"box=1:boxcolor={bg_color}:boxborderw=10:"
@@ -504,7 +526,12 @@ def create_video_with_audio_and_captions(
         # Use ASS subtitle filter for karaoke-style captions
         # Escape the path for FFmpeg filter syntax
         escaped_ass_path = ass_file_path.replace("\\", "/").replace(":", "\\:")
-        filter_parts.append(f"{current_stream}ass='{escaped_ass_path}'[v]")
+        # fontsdir lets libass resolve the bundled font without it being
+        # installed system-wide (containers have no system fonts)
+        escaped_fonts_dir = str(FONTS_DIR).replace("\\", "/").replace(":", "\\:")
+        filter_parts.append(
+            f"{current_stream}ass='{escaped_ass_path}':fontsdir='{escaped_fonts_dir}'[v]"
+        )
     elif all_captions:
         # Use drawtext filters for box-style captions
         filter_parts.append(f"{current_stream}{all_captions}[v]")
