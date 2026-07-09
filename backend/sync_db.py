@@ -1,63 +1,37 @@
 
 #!/usr/bin/env python3
 """
-Sync local `videos` table with objects in S3 for local dev.
+Sync local `videos` table with objects in storage for local dev.
 
-- Lists all objects in the S3 bucket
+- Lists all objects in the configured storage backend (R2 or local)
 - Extracts user_id from key prefix (format: "{user_id}/{uuid}{ext}")
 - Inserts rows into `videos` for any s3_key that doesn't exist locally
 
 Requires:
-- AWS credentials configured (aws configure or env vars)
 - .env with DATABASE_URL pointing to your local DB
+- Storage backend configured (STORAGE_BACKEND / R2_* vars)
 """
 
 import os
 from pathlib import Path
 from typing import Optional
 
-import boto3
 import psycopg2
 from dotenv import load_dotenv
 
-BUCKET_NAME = "emory-hacks-video-bucket"
+from storage import get_storage_backend
 
 # ---- Load env (.env in project root) ----
-BASE_DIR = Path(__file__).resolve().parent# HackEmory-backend/
+BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL not set in environment/.env")
 
-s3 = boto3.client("s3")
-
 
 def get_db_conn():
     return psycopg2.connect(DATABASE_URL)
-
-
-def list_all_s3_keys(bucket: str):
-    """Yield all object keys in the bucket (handles pagination)."""
-    continuation_token: Optional[str] = None
-
-    while True:
-        kwargs = {"Bucket": bucket}
-        if continuation_token:
-            kwargs["ContinuationToken"] = continuation_token
-
-        resp = s3.list_objects_v2(**kwargs)
-        for obj in resp.get("Contents", []):
-            key = obj["Key"]
-            # skip "folders"
-            if key.endswith("/"):
-                continue
-            yield key
-
-        if resp.get("IsTruncated"):
-            continuation_token = resp.get("NextContinuationToken")
-        else:
-            break
 
 
 def parse_user_id_from_key(key: str) -> Optional[int]:
@@ -75,6 +49,9 @@ def parse_user_id_from_key(key: str) -> Optional[int]:
 
 
 def sync_videos():
+    storage = get_storage_backend()
+    print(f"Syncing from {storage.backend_name}")
+
     conn = get_db_conn()
     conn.autocommit = True
     cur = conn.cursor()
@@ -83,7 +60,7 @@ def sync_videos():
     skipped_existing = 0
     skipped_bad = 0
 
-    for key in list_all_s3_keys(BUCKET_NAME):
+    for key in storage.iter_keys():
         user_id = parse_user_id_from_key(key)
         if user_id is None:
             print(f"⚠️  Skipping key without numeric user_id prefix: {key}")
