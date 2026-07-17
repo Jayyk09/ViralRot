@@ -147,9 +147,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         };
 
         return (
-            <div className="relative bg-gray-900 rounded-xl overflow-hidden shadow-2xl w-full max-w-md h-[85vh]">
+            <div className="relative bg-card rounded-lg overflow-hidden shadow-2xl w-full max-w-md h-[85vh]">
                 {/* Video Container with TikTok-style aspect */}
-                <div className="relative w-full h-full bg-black">
+                <div className="relative w-full h-full bg-background">
                     {/* Video Element */}
                     <video
                         ref={videoRef}
@@ -166,32 +166,32 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                     {/* Play/Pause Overlay */}
                     <button
                         onClick={togglePlay}
-                        className="absolute inset-0 flex items-center justify-center bg-transparent hover:bg-black/10 transition-colors"
+                        className="absolute inset-0 flex items-center justify-center bg-transparent hover:bg-background/10 transition-colors"
                     >
                         {!isPlaying && (
-                            <div className="h-20 w-20 bg-white/90 rounded-full flex items-center justify-center shadow-xl">
-                                <Play className="h-10 w-10 text-gray-900 ml-1" />
+                            <div className="h-20 w-20 bg-foreground/90 rounded-full flex items-center justify-center shadow-xl">
+                                <Play className="h-10 w-10 text-background ml-1" />
                             </div>
                         )}
                     </button>
 
                     {/* Bottom gradient + info + controls */}
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 space-y-3">
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background/90 via-background/50 to-transparent p-4 space-y-3">
                         {/* Video Info */}
                         <div className="space-y-1">
-                            <h3 className="font-semibold text-lg text-white text-balance leading-tight">
+                            <h3 className="font-semibold text-lg text-foreground text-balance leading-tight">
                                 {video.title}
                             </h3>
-                            <p className="text-sm text-gray-300 line-clamp-2">
+                            <p className="text-sm text-muted-foreground line-clamp-2">
                                 {video.description}
                             </p>
                             {(video.subject ||
                                 video.character ||
                                 video.duration) && (
-                                <div className="flex items-center gap-2 text-sm text-gray-300">
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                     {video.subject && (
                                         <>
-                                            <span className="bg-indigo-600 px-2 py-0.5 rounded-full text-xs font-medium">
+                                            <span className="bg-primary text-primary-foreground px-2 py-0.5 rounded-full text-xs font-medium">
                                                 {video.subject}
                                             </span>
                                             <span>•</span>
@@ -206,7 +206,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                                         </>
                                     )}
                                     {video.duration && (
-                                        <span>{video.duration}</span>
+                                        <span className="font-[family-name:var(--font-mono)]">
+                                            {video.duration}
+                                        </span>
                                     )}
                                 </div>
                             )}
@@ -218,7 +220,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                                 onClick={togglePlay}
                                 size="icon"
                                 variant="ghost"
-                                className="h-10 w-10 text-white hover:bg-white/20"
+                                className="h-10 w-10 text-foreground hover:bg-foreground/20"
                             >
                                 {isPlaying ? (
                                     <Pause className="h-5 w-5" />
@@ -231,7 +233,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                                 onClick={toggleMute}
                                 size="icon"
                                 variant="ghost"
-                                className="h-10 w-10 text-white hover:bg-white/20"
+                                className="h-10 w-10 text-foreground hover:bg-foreground/20"
                             >
                                 {isMuted ? (
                                     <VolumeX className="h-5 w-5" />
@@ -244,7 +246,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                                 onClick={toggleFullscreen}
                                 size="icon"
                                 variant="ghost"
-                                className="h-10 w-10 text-white hover:bg-white/20 ml-auto"
+                                className="h-10 w-10 text-foreground hover:bg-foreground/20 ml-auto"
                             >
                                 <Maximize className="h-5 w-5" />
                             </Button>

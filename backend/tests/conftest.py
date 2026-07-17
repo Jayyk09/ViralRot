@@ -114,11 +114,11 @@ def mock_db():
 
 
 @pytest.fixture
-def mock_s3():
-    """Mock S3 client (legacy fixture - use mock_storage_backend for new code)."""
-    with patch("storage.s3_backend.boto3") as mock:
+def mock_r2():
+    """Mock R2 client (legacy fixture - use mock_storage_backend for new code)."""
+    with patch("storage.r2_backend.boto3") as mock:
         mock_client = MagicMock()
-        mock_client.generate_presigned_url.return_value = "https://s3.example.com/video.mp4"
+        mock_client.generate_presigned_url.return_value = "https://r2.example.com/video.mp4"
         mock.client.return_value = mock_client
         yield mock_client
 

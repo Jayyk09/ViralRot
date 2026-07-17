@@ -14,11 +14,13 @@ venv/
 # Node
 node_modules/
 .next/
+package-lock.json
 
 # Generated/temp
 tmp/
 test_audio_minimax/
 test_configs/
+backend/dev_fixtures/
 
 # Backend generated assets (videos, audio, output)
 backend/assets/audio/generated/

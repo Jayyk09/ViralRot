@@ -21,17 +21,91 @@ VOICE_MAP = {
 }
 
 
-def generate_audio_from_dialouge(dialouge: str, voice_id: str) -> tuple[bytes, float]:
+def _merge_word_fragments(subtitle_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Merge MiniMax's sub-word fragments into whole words.
+
+    MiniMax's word-level subtitle_file splits text into syllable/phoneme-sized
+    fragments (e.g. "Hey" -> "He" + "y"), not whole words - confirmed against a
+    live API response. Concatenating every fragment's text reproduces the
+    original string exactly, so whole "visual" words are reconstructed by
+    merging consecutive non-whitespace fragments between whitespace fragments.
+
+    Returns timestamps in seconds (source data is milliseconds).
+    """
+    words = []
+    current_text = ""
+    current_start_ms = None
+    current_end_ms = None
+
+    for segment in subtitle_segments:
+        for frag in segment.get("timestamped_words", []):
+            text = frag.get("word", "")
+            start_ms = frag.get("time_begin", 0.0)
+            end_ms = frag.get("time_end", start_ms)
+
+            if text.strip() == "":
+                if current_text:
+                    words.append({
+                        "word": current_text,
+                        "start": round(current_start_ms / 1000.0, 3),
+                        "end": round(current_end_ms / 1000.0, 3),
+                    })
+                    current_text = ""
+                    current_start_ms = None
+                    current_end_ms = None
+                continue
+
+            if current_start_ms is None:
+                current_start_ms = start_ms
+            current_end_ms = end_ms
+            current_text += text
+
+    if current_text:
+        words.append({
+            "word": current_text,
+            "start": round(current_start_ms / 1000.0, 3),
+            "end": round(current_end_ms / 1000.0, 3),
+        })
+
+    return words
+
+
+def _fetch_word_timestamps(subtitle_url: str) -> List[Dict[str, Any]]:
+    """
+    Fetch and parse MiniMax's subtitle_file into merged word-level timestamps.
+
+    Returns an empty list (never raises) on any failure so missing/unreliable
+    captions never fail the whole audio generation job - callers should fall
+    back to line-level timing when this comes back empty.
+    """
+    try:
+        response = requests.get(subtitle_url, timeout=15)
+        response.raise_for_status()
+        segments = response.json()
+        if not isinstance(segments, list):
+            print(f"⚠️  Unexpected subtitle_file shape (expected list): {type(segments)}")
+            return []
+        return _merge_word_fragments(segments)
+    except Exception as e:
+        print(f"⚠️  Failed to fetch/parse subtitle_file: {e}")
+        return []
+
+
+def generate_audio_from_dialouge(dialouge: str, voice_id: str) -> tuple[bytes, float, List[Dict[str, Any]]]:
     """
     Call MiniMax TTS API for a single text segment.
-    
+
     Args:
         text: Text to synthesize
         voice_id: MiniMax voice ID
-        
+
     Returns:
-        Tuple of (audio_bytes, duration_seconds)
-        
+        Tuple of (audio_bytes, duration_seconds, word_timestamps)
+        word_timestamps is a list of {word, start, end} in seconds, relative
+        to the start of this segment's own audio (0-based). Empty if MiniMax's
+        subtitle_file was unavailable or unparseable.
+
     Raises:
         Exception: If API call fails
     """
@@ -65,8 +139,10 @@ def generate_audio_from_dialouge(dialouge: str, voice_id: str) -> tuple[bytes, f
             "channel": 1,
         },
         "output_format": "hex",
+        "subtitle_enable": True,
+        "subtitle_type": "word",
     }
-    
+
     response = requests.post(MINIMAX_API_URL, headers=headers, params=params, json=payload, timeout=30)
     
     # Check for errors
@@ -85,11 +161,12 @@ def generate_audio_from_dialouge(dialouge: str, voice_id: str) -> tuple[bytes, f
 
 
     '''
-    MiniMax response type:
+    MiniMax response type (confirmed live with subtitle_enable=True, subtitle_type="word"):
         {
           "data": {
             "audio": "<hex encoded audio>",
-            "status": 2
+            "status": 2,
+            "subtitle_file": "https://...signed-download-url..."
           },
           "extra_info": {
             "audio_length": 11124,
@@ -108,22 +185,32 @@ def generate_audio_from_dialouge(dialouge: str, voice_id: str) -> tuple[bytes, f
             "status_msg": "success"
           }
         }
-    ''' 
-    
+
+    subtitle_file is a download link, NOT inline timestamps - it must be
+    fetched separately. Its contents are a JSON list of segments, each with
+    timestamped_words: sub-word fragments in milliseconds (see
+    _merge_word_fragments for why these need merging into whole words).
+    '''
+
     # Extract audio data
     data = result.get("data", {})
     if not data["audio"]:
         raise Exception("No audio data in MiniMax response")
-    
+
     hex_audio = data["audio"]
     audio_bytes = bytes.fromhex(hex_audio)
-    
+
     # Get duration from extra_info
     extra_info = result.get("extra_info", {})
     duration_ms = extra_info.get("audio_length", 0)
     duration_sec = round(duration_ms / 1000.0, 3)
-    
-    return audio_bytes, duration_sec
+
+    word_timestamps = []
+    subtitle_url = data.get("subtitle_file")
+    if subtitle_url:
+        word_timestamps = _fetch_word_timestamps(subtitle_url)
+
+    return audio_bytes, duration_sec, word_timestamps
 
 
 
@@ -178,23 +265,25 @@ def generate_audio_from_transcript(
         
         try:
             # Generate audio via MiniMax API
-            audio_bytes, duration = generate_audio_from_dialouge(caption, voice_id)
-            
+            audio_bytes, duration, word_timestamps = generate_audio_from_dialouge(caption, voice_id)
+
             # Save audio to file
             output_file = os.path.join(
                 output_dir, f"segment_{idx:03d}_{speaker.lower()}.mp3"
             )
             with open(output_file, "wb") as f:
                 f.write(audio_bytes)
-            
+
             audio_segments.append(
                 {
                     "index": idx,
+                    "line_id": segment.get("id"),
                     "file": output_file,
                     "caption": caption,
                     "speaker": speaker,
                     "emotion": emotion,
                     "duration": duration,
+                    "word_timestamps": word_timestamps,  # 0-based, relative to this segment
                 }
             )
             
@@ -261,6 +350,7 @@ def concatenate_audio_segments(
     
     # Calculate timings based on durations from MiniMax API
     timings = []
+    word_timestamps = []
     current_time = 0.0
 
     for segment in audio_segments:
@@ -286,6 +376,7 @@ def concatenate_audio_segments(
         timings.append(
             {
                 "index": segment["index"],
+                "line_id": segment.get("line_id"),
                 "start": round(current_time, 3),
                 "end": round(current_time + duration, 3),
                 "duration": round(duration, 3),
@@ -295,14 +386,27 @@ def concatenate_audio_segments(
             }
         )
 
+        # Offset this segment's local (0-based) word timestamps onto the full timeline
+        for word in segment.get("word_timestamps", []) or []:
+            word_timestamps.append(
+                {
+                    "word": word["word"],
+                    "start": round(current_time + word["start"], 3),
+                    "end": round(current_time + word["end"], 3),
+                    "line_index": segment["index"],
+                    "line_id": segment.get("line_id"),
+                }
+            )
+
         current_time += duration
-    
+
     print(f"✅ Full audio saved: {output_file} (Total duration: {current_time:.2f}s)")
-    
+
     return {
         "audio_file": output_file,
         "total_duration": current_time,
         "timings": timings,
+        "word_timestamps": word_timestamps,
     }
 
 

@@ -168,7 +168,7 @@ def generate_videos_from_subtopic_list(
         user_id: User ID for database entry
         collection_id: Optional existing collection ID. If not provided, creates new collection.
         image_dir: Optional directory containing educational images referenced in dialogue
-        storage_backend: Storage backend override ('s3' or 'local'). Uses env var if not set.
+        storage_backend: Storage backend override ('r2' or 'local'). Uses env var if not set.
         progress_callback: Optional callback function for progress updates.
                           Called with (job_id, current_stage, current_subtopic, subtopic_title)
         job_id: Job ID for progress tracking (required if progress_callback is provided)

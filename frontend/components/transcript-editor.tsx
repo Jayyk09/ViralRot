@@ -108,7 +108,7 @@ export function TranscriptEditor({
                     {validation.errors.map((error, i) => (
                         <div
                             key={`error-${i}`}
-                            className="flex items-start gap-2 p-2 bg-red-500/10 border border-red-500/20 rounded text-sm text-red-400"
+                            className="flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive"
                         >
                             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                             <span>{error}</span>
@@ -117,7 +117,7 @@ export function TranscriptEditor({
                     {validation.warnings.map((warning, i) => (
                         <div
                             key={`warning-${i}`}
-                            className="flex items-start gap-2 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-sm text-yellow-400"
+                            className="flex items-start gap-2 p-2 bg-warning/10 border border-warning/20 rounded-md text-sm text-warning"
                         >
                             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                             <span>{warning}</span>
@@ -128,12 +128,14 @@ export function TranscriptEditor({
 
             {/* Dialogue Title */}
             {dialogue?.title && (
-                <div className="mb-4 p-3 bg-gray-800 rounded-lg">
-                    <h3 className="font-medium text-white">{dialogue.title}</h3>
-                    <p className="text-sm text-gray-400 mt-1">
+                <div className="mb-4 p-3 bg-muted rounded-lg">
+                    <h3 className="font-medium text-foreground">
+                        {dialogue.title}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
                         {dialogue.dialogue.length} dialogue lines
                         {dialogue.dialogue.some((l) => l.image) && (
-                            <span className="ml-2 text-indigo-400">
+                            <span className="ml-2 text-primary">
                                 (
                                 {
                                     dialogue.dialogue.filter((l) => l.image)
@@ -191,7 +193,7 @@ export function TranscriptEditor({
             </ScrollArea>
 
             {/* Summary & Actions */}
-            <div className="mt-4 pt-4 border-t border-gray-800">
+            <div className="mt-4 pt-4 border-t border-border">
                 {/* Caption Mode Toggle */}
                 <div className="mb-4">
                     <CaptionModeToggle
@@ -201,7 +203,7 @@ export function TranscriptEditor({
                 </div>
 
                 <div className="flex items-center justify-between mb-4">
-                    <div className="text-sm text-gray-400">
+                    <div className="text-sm text-muted-foreground">
                         {editor.hasImages() ? (
                             <span>
                                 {editor.getImageFiles().length} image
@@ -219,7 +221,7 @@ export function TranscriptEditor({
                             variant="ghost"
                             size="sm"
                             onClick={() => editor.clearAllImages()}
-                            className="text-gray-400 hover:text-red-400"
+                            className="text-muted-foreground hover:text-destructive"
                         >
                             <Trash2 className="h-4 w-4 mr-1" />
                             Clear all images
@@ -231,14 +233,14 @@ export function TranscriptEditor({
                     <Button
                         variant="outline"
                         onClick={onCancel}
-                        className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+                        className="flex-1"
                         disabled={isGenerating}
                     >
                         Back
                     </Button>
                     <Button
                         onClick={handleGenerate}
-                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                        className="flex-1"
                         disabled={isGenerating || !validation.valid}
                     >
                         {isGenerating ? "Generating..." : "Generate Video"}
@@ -287,12 +289,12 @@ function DialogueLineEditor({
     const [isExpanded, setIsExpanded] = useState(false);
 
     return (
-        <div className="bg-gray-850 border border-gray-700 rounded-lg overflow-hidden">
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
             {/* Line Header */}
             <div className="p-3">
                 <div className="flex items-start gap-3">
                     {/* Line Number */}
-                    <span className="text-xs text-gray-500 font-mono w-6 text-right shrink-0">
+                    <span className="text-xs text-muted-foreground font-[family-name:var(--font-mono)] w-6 text-right shrink-0">
                         {lineIdx + 1}
                     </span>
 
@@ -300,15 +302,15 @@ function DialogueLineEditor({
                     <span
                         className={`px-2 py-0.5 text-xs font-medium rounded ${
                             line.speaker === "PETER"
-                                ? "bg-blue-500/20 text-blue-400"
-                                : "bg-purple-500/20 text-purple-400"
+                                ? "bg-chart-1/20 text-chart-1"
+                                : "bg-chart-4/20 text-chart-4"
                         }`}
                     >
                         {line.speaker}
                     </span>
 
                     {/* Caption */}
-                    <p className="flex-1 text-sm text-gray-300 line-clamp-2">
+                    <p className="flex-1 text-sm text-muted-foreground line-clamp-2">
                         {line.caption}
                     </p>
 
@@ -316,7 +318,7 @@ function DialogueLineEditor({
                     {line.image ? (
                         <button
                             onClick={() => setIsExpanded(!isExpanded)}
-                            className="flex items-center gap-1 px-2 py-1 bg-indigo-500/20 text-indigo-400 text-xs rounded hover:bg-indigo-500/30 transition-colors"
+                            className="flex items-center gap-1 px-2 py-1 bg-primary/20 text-primary text-xs rounded hover:bg-primary/30 transition-colors"
                         >
                             <ImagePlus className="h-3 w-3" />
                             Image
@@ -327,7 +329,7 @@ function DialogueLineEditor({
                     ) : (
                         <button
                             onClick={onAddImage}
-                            className="flex items-center gap-1 px-2 py-1 text-gray-500 text-xs rounded border border-gray-700 hover:border-indigo-500 hover:text-indigo-400 transition-colors"
+                            className="flex items-center gap-1 px-2 py-1 text-muted-foreground text-xs rounded border border-border hover:border-primary hover:text-primary transition-colors"
                         >
                             <ImagePlus className="h-3 w-3" />
                             Add Image
@@ -336,7 +338,7 @@ function DialogueLineEditor({
                 </div>
 
                 {line.duration_estimate && (
-                    <span className="text-xs text-gray-500 mt-1 block ml-9">
+                    <span className="text-xs text-muted-foreground mt-1 block ml-9">
                         ~{line.duration_estimate.toFixed(1)}s
                     </span>
                 )}
@@ -344,11 +346,11 @@ function DialogueLineEditor({
 
             {/* Image Editor (Expanded) */}
             {line.image && isExpanded && (
-                <div className="px-3 pb-3 pt-2 border-t border-gray-700 bg-gray-900/50">
+                <div className="px-3 pb-3 pt-2 border-t border-border bg-muted/50">
                     <div className="flex gap-4">
                         {/* Preview */}
                         {previewUrl && (
-                            <div className="w-24 h-24 rounded overflow-hidden bg-gray-800 shrink-0">
+                            <div className="w-24 h-24 rounded overflow-hidden bg-muted shrink-0">
                                 <img
                                     src={previewUrl}
                                     alt="Preview"
@@ -360,12 +362,12 @@ function DialogueLineEditor({
                         {/* Controls */}
                         <div className="flex-1 space-y-3">
                             <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-400 truncate max-w-[150px]">
+                                <span className="text-xs text-muted-foreground truncate max-w-[150px] font-[family-name:var(--font-mono)]">
                                     {line.image.filename}
                                 </span>
                                 <button
                                     onClick={onRemoveImage}
-                                    className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                                    className="p-1 text-muted-foreground hover:text-destructive transition-colors"
                                     title="Remove image"
                                 >
                                     <X className="h-4 w-4" />
@@ -375,7 +377,7 @@ function DialogueLineEditor({
                             <div className="grid grid-cols-3 gap-2">
                                 {/* Size */}
                                 <div>
-                                    <Label className="text-xs text-gray-500">
+                                    <Label className="text-xs text-muted-foreground">
                                         Size
                                     </Label>
                                     <Select
@@ -384,7 +386,7 @@ function DialogueLineEditor({
                                             onUpdateSize(v as ImageSize)
                                         }
                                     >
-                                        <SelectTrigger className="h-8 text-xs bg-gray-800 border-gray-700">
+                                        <SelectTrigger className="h-8 text-xs">
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -400,7 +402,7 @@ function DialogueLineEditor({
 
                                 {/* Start Time */}
                                 <div>
-                                    <Label className="text-xs text-gray-500">
+                                    <Label className="text-xs text-muted-foreground">
                                         Start (s)
                                     </Label>
                                     <Input
@@ -412,13 +414,13 @@ function DialogueLineEditor({
                                             onUpdateStartTime(e.target.value)
                                         }
                                         placeholder="0"
-                                        className="h-8 text-xs bg-gray-800 border-gray-700"
+                                        className="h-8 text-xs"
                                     />
                                 </div>
 
                                 {/* Duration */}
                                 <div>
-                                    <Label className="text-xs text-gray-500">
+                                    <Label className="text-xs text-muted-foreground">
                                         Duration (s)
                                     </Label>
                                     <Input
@@ -430,12 +432,12 @@ function DialogueLineEditor({
                                             onUpdateDuration(e.target.value)
                                         }
                                         placeholder="Auto"
-                                        className="h-8 text-xs bg-gray-800 border-gray-700"
+                                        className="h-8 text-xs"
                                     />
                                 </div>
                             </div>
 
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                                 {line.image.size === "medium"
                                     ? "Top-right corner"
                                     : "Top-center"}{" "}

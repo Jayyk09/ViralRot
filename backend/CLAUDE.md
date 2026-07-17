@@ -44,7 +44,7 @@ Required in `.env` (see `.env.example`):
 - `MINIMAX_GROUP_ID` - MiniMax group ID for authentication
 - `MINIMAX_PETER_VOICE`, `MINIMAX_STEWIE_VOICE` - MiniMax voice IDs
 - `DATABASE_URL` - PostgreSQL connection string (Neon for prod, local for dev)
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` - For S3 video storage
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` - For Cloudflare R2 video storage (`STORAGE_BACKEND=r2`, or `local` for filesystem storage)
 
 Note: YouTube transcript extraction uses `youtube-transcript-api` (no API key required)
 
@@ -77,14 +77,14 @@ Input (YouTube/Audio/PPTX/Text)
     ↓
 extract_transcripts() → SingleDialogue (~1 minute conversation)
     ↓
-generate_video_from_dialogue() → Single video uploaded to S3
+generate_video_from_dialogue() → Single video uploaded to R2
     ↓
 Saved to collection in PostgreSQL (one video per transcript)
 ```
 
 ### Database Layer (`services/`)
 
-- `video_service.py` - Video CRUD and S3 upload
+- `video_service.py` - Video CRUD and R2 upload
 - `collection_service.py` - Collection management
 - `account_service.py` - User accounts
 - `progress_service.py` - Job progress tracking with WebSocket support
@@ -331,7 +331,7 @@ Tests are organized by feature in `tests/`:
 - `test_api.py` - FastAPI endpoint tests
 - `test_youtube.py` - YouTube transcript extraction
 
-Shared fixtures in `conftest.py` mock external services (Gemini, MiniMax, DB, S3, FFmpeg).
+Shared fixtures in `conftest.py` mock external services (Gemini, MiniMax, DB, R2, FFmpeg).
 
 ## Docker Setup
 
@@ -342,7 +342,11 @@ Shared fixtures in `conftest.py` mock external services (Gemini, MiniMax, DB, S3
 
 ## Asset Directories
 
-- `assets/videos/` - Background video files (.mp4)
-- `assets/characters/` - Character images (peter.png, etc.)
+- `assets/videos/` - Local background video files (.mp4) — optional override; the pipeline falls back to storage keys under `backgrounds/` when this is empty
+- `assets/characters/` - Character images (peter.png, etc.) — falls back to storage keys under `assets/characters/` when missing locally
+- `assets/fonts/` - Bundled caption font (LiberationSans-Bold.ttf); override with `CAPTION_FONT_PATH`
 - `assets/audio/generated/` - Generated TTS audio
 - `assets/output/` - Final assembled videos
+- `tmp/asset_cache/` - Local cache of assets fetched from storage (override with `ASSET_CACHE_DIR`)
+
+Seed backgrounds and characters into the storage bucket with `python scripts/seed_assets.py`.

@@ -47,7 +47,7 @@ def generate_complete_collection(
         background_dir: Directory containing background videos (or single video file)
         output_dir: Base directory for output videos
         audio_dir: Base directory for generated audio
-        storage_backend: Storage backend ('s3' or 'local'). Uses env var if not set.
+        storage_backend: Storage backend ('r2' or 'local'). Uses env var if not set.
 
     Returns:
         Dictionary with collection info and video result
@@ -188,8 +188,8 @@ Examples:
     )
     parser.add_argument(
         "--storage",
-        choices=["s3", "local"],
-        help="Storage backend to use (default: from STORAGE_BACKEND env var or 's3')",
+        choices=["r2", "local"],
+        help="Storage backend to use (default: from STORAGE_BACKEND env var or 'r2')",
     )
     parser.add_argument(
         "--storage-stats",

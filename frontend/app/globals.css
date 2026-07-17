@@ -4,80 +4,48 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-    /* Warm Sunset Theme - Cream background with coral/orange accents */
-    --background: oklch(0.97 0.015 85);
-    --foreground: oklch(0.25 0.02 50);
-    --brainrot-coral: oklch(0.7 0.18 25);
-    --brainrot-orange: oklch(0.75 0.16 55);
-    --brainrot-yellow: oklch(0.88 0.12 90);
-    --brainrot-peach: oklch(0.92 0.06 60);
-    --brainrot-brown: oklch(0.4 0.08 55);
-    --card: oklch(0.99 0.01 85);
-    --card-foreground: oklch(0.25 0.02 50);
-    --popover: oklch(0.99 0.01 85);
-    --popover-foreground: oklch(0.25 0.02 50);
-    --primary: oklch(0.65 0.2 25);
-    --primary-foreground: oklch(0.99 0.01 85);
-    --secondary: oklch(0.92 0.04 85);
-    --secondary-foreground: oklch(0.35 0.05 50);
-    --muted: oklch(0.94 0.02 85);
-    --muted-foreground: oklch(0.5 0.03 50);
-    --accent: oklch(0.88 0.12 90);
-    --accent-foreground: oklch(0.3 0.05 50);
-    --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: oklch(0.99 0 0);
-    --border: oklch(0.88 0.03 70);
-    --input: oklch(0.92 0.02 85);
-    --ring: oklch(0.7 0.18 25);
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-}
+    /* Resolve-inspired — neutral charcoal panels, one signature orange accent */
+    --background: oklch(0.16 0 0);
+    --foreground: oklch(0.92 0 0);
+    --card: oklch(0.21 0 0);
+    --card-foreground: oklch(0.92 0 0);
+    --popover: oklch(0.23 0 0);
+    --popover-foreground: oklch(0.92 0 0);
+    --primary: oklch(0.72 0.19 48);
+    --primary-foreground: oklch(0.14 0.02 48);
+    --secondary: oklch(0.27 0 0);
+    --secondary-foreground: oklch(0.88 0 0);
+    --muted: oklch(0.24 0 0);
+    --muted-foreground: oklch(0.63 0 0);
+    --accent: oklch(0.29 0 0);
+    --accent-foreground: oklch(0.92 0 0);
+    --destructive: oklch(0.62 0.23 22);
+    --destructive-foreground: oklch(0.98 0.005 22);
+    --success: oklch(0.72 0.15 150);
+    --success-foreground: oklch(0.14 0.02 150);
+    --warning: oklch(0.82 0.15 95);
+    --warning-foreground: oklch(0.18 0.03 95);
+    --border: oklch(0.29 0 0);
+    --input: oklch(0.25 0 0);
+    --ring: oklch(0.72 0.19 48 / 0.55);
+    --chart-1: oklch(0.68 0.14 230);
+    --chart-2: oklch(0.72 0.15 150);
+    --chart-3: oklch(0.8 0.14 95);
+    --chart-4: oklch(0.65 0.2 320);
+    --chart-5: oklch(0.7 0.13 190);
+    --radius: 0.25rem;
+    --sidebar: oklch(0.19 0 0);
+    --sidebar-foreground: oklch(0.92 0 0);
+    --sidebar-primary: oklch(0.72 0.19 48);
+    --sidebar-primary-foreground: oklch(0.14 0.02 48);
+    --sidebar-accent: oklch(0.27 0 0);
+    --sidebar-accent-foreground: oklch(0.92 0 0);
+    --sidebar-border: oklch(0.29 0 0);
+    --sidebar-ring: oklch(0.72 0.19 48 / 0.55);
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.145 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.145 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.985 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.396 0.141 25.723);
-    --destructive-foreground: oklch(0.637 0.237 25.331);
-    --border: oklch(0.269 0 0);
-    --input: oklch(0.269 0 0);
-    --ring: oklch(0.439 0 0);
-    --chart-1: oklch(0.488 0.243 264.376);
-    --chart-2: oklch(0.696 0.17 162.48);
-    --chart-3: oklch(0.769 0.188 70.08);
-    --chart-4: oklch(0.627 0.265 303.9);
-    --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.269 0 0);
-    --sidebar-ring: oklch(0.439 0 0);
+    /* Motion */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 @theme inline {
@@ -86,11 +54,6 @@
     --font-heading: "Space Grotesk", "Space Grotesk Fallback";
     --color-background: var(--background);
     --color-foreground: var(--foreground);
-    --color-brainrot-coral: var(--brainrot-coral);
-    --color-brainrot-orange: var(--brainrot-orange);
-    --color-brainrot-yellow: var(--brainrot-yellow);
-    --color-brainrot-peach: var(--brainrot-peach);
-    --color-brainrot-brown: var(--brainrot-brown);
     --color-card: var(--card);
     --color-card-foreground: var(--card-foreground);
     --color-popover: var(--popover);
@@ -105,6 +68,10 @@
     --color-accent-foreground: var(--accent-foreground);
     --color-destructive: var(--destructive);
     --color-destructive-foreground: var(--destructive-foreground);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
     --color-border: var(--border);
     --color-input: var(--input);
     --color-ring: var(--ring);
@@ -134,75 +101,62 @@
     html,
     body {
         @apply bg-background text-foreground m-0 p-0;
+        font-feature-settings:
+            "cv02", "cv03", "cv04", "cv11";
+    }
+    ::selection {
+        background: color-mix(in oklch, var(--primary) 35%, transparent);
+        color: var(--foreground);
     }
 }
 
-/* Custom Animations */
-@keyframes float {
-    0%,
-    100% {
-        transform: translateY(0) rotate(0deg);
-    }
-    50% {
-        transform: translateY(-20px) rotate(5deg);
-    }
+/* Subtle top bevel for toolbars/panels — evokes Resolve's beveled chrome */
+.panel-edge {
+    box-shadow: inset 0 1px 0 0 color-mix(in oklch, white 6%, transparent);
 }
 
-@keyframes waveform {
-    0%,
-    100% {
-        transform: scaleY(0.5);
-    }
-    50% {
-        transform: scaleY(1.5);
-    }
+/* Precision grid backdrop — used sparingly on hero/marketing surfaces */
+.bg-grid {
+    background-image:
+        linear-gradient(
+            to right,
+            color-mix(in oklch, var(--border) 60%, transparent) 1px,
+            transparent 1px
+        ),
+        linear-gradient(
+            to bottom,
+            color-mix(in oklch, var(--border) 60%, transparent) 1px,
+            transparent 1px
+        );
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
 }
 
-@keyframes scroll-rails {
+/* Live/processing indicator */
+@keyframes pulse-ring {
     0% {
+        box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 45%, transparent);
+    }
+    100% {
+        box-shadow: 0 0 0 8px color-mix(in oklch, var(--primary) 0%, transparent);
+    }
+}
+
+.animate-pulse-ring {
+    animation: pulse-ring 1.6s var(--ease-in-out) infinite;
+}
+
+@keyframes fade-in-up {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
         transform: translateY(0);
     }
-    100% {
-        transform: translateY(64px);
-    }
 }
 
-@keyframes cut {
-    0%,
-    100% {
-        transform: translateX(-50%) translateY(0);
-    }
-    50% {
-        transform: translateX(-50%) translateY(20px);
-    }
-}
-
-@keyframes drip {
-    0%,
-    100% {
-        transform: scaleY(1);
-    }
-    50% {
-        transform: scaleY(1.3);
-    }
-}
-
-.animate-float {
-    animation: float 6s ease-in-out infinite;
-}
-
-.animate-waveform {
-    animation: waveform 0.8s ease-in-out infinite;
-}
-
-.animate-scroll-rails {
-    animation: scroll-rails 0.5s linear infinite;
-}
-
-.animate-cut {
-    animation: cut 1s ease-in-out infinite;
-}
-
-.animate-drip {
-    animation: drip 2s ease-in-out infinite;
+.animate-fade-in-up {
+    animation: fade-in-up 400ms var(--ease-out) both;
 }

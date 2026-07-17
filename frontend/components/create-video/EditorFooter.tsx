@@ -1,6 +1,6 @@
 "use client";
 
-import { DialogueLine } from "@/lib/types";
+import { DialogueLine, LineTiming } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Play } from "lucide-react";
 
@@ -8,6 +8,8 @@ interface EditorFooterProps {
     lines: DialogueLine[];
     selectedLineIdx: number;
     onSelectLine: (idx: number) => void;
+    /** Real per-line timings from /jobs/generate-audio - used instead of duration_estimate when present */
+    lineTimings?: LineTiming[];
 }
 
 const DEFAULT_DURATION = 3; // seconds per line when no estimate
@@ -23,16 +25,19 @@ function formatTime(seconds: number): string {
 }
 
 const SPEAKER_COLOR: Record<string, string> = {
-    PETER: "bg-blue-500",
-    STEWIE: "bg-purple-500",
+    PETER: "bg-chart-1",
+    STEWIE: "bg-chart-4",
 };
 
 export function EditorFooter({
     lines,
     selectedLineIdx,
     onSelectLine,
+    lineTimings,
 }: EditorFooterProps) {
-    const durations = lines.map((l) => l.duration_estimate ?? DEFAULT_DURATION);
+    const durations = lines.map(
+        (l, idx) => lineTimings?.[idx]?.duration ?? l.duration_estimate ?? DEFAULT_DURATION,
+    );
     const totalDuration = durations.reduce((a, b) => a + b, 0);
 
     return (
@@ -70,7 +75,7 @@ export function EditorFooter({
                                 "h-full rounded-sm transition-all shrink-0 min-w-[3px]",
                                 SPEAKER_COLOR[line.speaker] ?? "bg-muted-foreground",
                                 idx === selectedLineIdx
-                                    ? "opacity-100 ring-1 ring-white/50 ring-offset-0"
+                                    ? "opacity-100 ring-2 ring-primary ring-offset-1 ring-offset-background"
                                     : "opacity-40 hover:opacity-70",
                             )}
                         />

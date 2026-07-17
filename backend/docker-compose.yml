@@ -15,10 +15,12 @@ services:
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - Peter_voiceId=${Peter_voiceId}
       - Stewie_voiceId=${Stewie_voiceId}
-      # AWS (optional, for S3 uploads)
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      # Cloudflare R2 (video storage)
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-r2}
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-}
     volumes:
       # Static assets (read-only)
       - ./assets/videos:/app/assets/videos:ro
@@ -47,9 +49,11 @@ services:
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - Peter_voiceId=${Peter_voiceId}
       - Stewie_voiceId=${Stewie_voiceId}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-r2}
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-}
     volumes:
       - ./assets/videos:/app/assets/videos:ro
       - ./assets/characters:/app/assets/characters:ro

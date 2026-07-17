@@ -1,6 +1,14 @@
 "use client";
 
-import { CheckCircle2, Circle, Loader2 } from "lucide-react";
+import {
+    Link2,
+    FileText,
+    ImageIcon,
+    Wand2,
+    CheckCircle2,
+    AlertTriangle,
+    type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type CreateStep =
@@ -16,24 +24,12 @@ interface CreateStepIndicatorProps {
     className?: string;
 }
 
-const STEPS = [
-    {
-        id: "source",
-        label: "Source",
-        description: "Choose your content source",
-    },
-    {
-        id: "transcript",
-        label: "Transcript",
-        description: "Generate dialogue",
-    },
-    {
-        id: "editing",
-        label: "Edit & Images",
-        description: "Add educational images",
-    },
-    { id: "video", label: "Generate", description: "Create your video" },
-    { id: "complete", label: "Complete", description: "Video ready" },
+const STEPS: { id: string; label: string; icon: LucideIcon }[] = [
+    { id: "source", label: "Source", icon: Link2 },
+    { id: "transcript", label: "Transcript", icon: FileText },
+    { id: "editing", label: "Edit", icon: ImageIcon },
+    { id: "video", label: "Generate", icon: Wand2 },
+    { id: "complete", label: "Complete", icon: CheckCircle2 },
 ];
 
 function getStepStatus(
@@ -45,7 +41,6 @@ function getStepStatus(
     const stepIndex = stepOrder.indexOf(stepId);
 
     if (currentStep === "error") {
-        // In error state, mark current position as error
         return stepIndex === currentIndex
             ? "error"
             : stepIndex < currentIndex
@@ -58,77 +53,60 @@ function getStepStatus(
     return "pending";
 }
 
+// Page-tab bar in the spirit of DaVinci Resolve's bottom page selector:
+// flat rectangular tabs, icon over label, a colored top edge marks the
+// active page instead of a connected step-circle diagram.
 export function CreateStepIndicator({
     currentStep,
     className,
 }: CreateStepIndicatorProps) {
     return (
-        <div className={cn("w-full", className)}>
-            <nav aria-label="Progress">
-                <ol className="flex items-center justify-center gap-2 md:gap-4">
-                    {STEPS.map((step, index) => {
-                        const status = getStepStatus(step.id, currentStep);
-                        const isLast = index === STEPS.length - 1;
+        <nav
+            aria-label="Progress"
+            className={cn(
+                "panel-edge flex items-stretch justify-center border-t border-border bg-card",
+                className,
+            )}
+        >
+            {STEPS.map((step) => {
+                const status = getStepStatus(step.id, currentStep);
+                const isError = status === "error";
+                const Icon = isError ? AlertTriangle : step.icon;
 
-                        return (
-                            <li key={step.id} className="flex items-center">
-                                <div className="flex flex-col items-center">
-                                    {/* Step Circle */}
-                                    <div
-                                        className={cn(
-                                            "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                                            status === "complete" &&
-                                                "bg-green-500",
-                                            status === "current" &&
-                                                "bg-brainrot-coral",
-                                            status === "pending" &&
-                                                "bg-brainrot-peach border border-brainrot-orange/30",
-                                            status === "error" && "bg-red-500",
-                                        )}
-                                    >
-                                        {status === "complete" ? (
-                                            <CheckCircle2 className="h-5 w-5 text-white" />
-                                        ) : status === "current" ? (
-                                            <Loader2 className="h-5 w-5 text-white animate-spin" />
-                                        ) : (
-                                            <Circle className="h-5 w-5 text-brainrot-brown/40" />
-                                        )}
-                                    </div>
-
-                                    {/* Step Label */}
-                                    <span
-                                        className={cn(
-                                            "mt-2 text-xs font-medium hidden md:block",
-                                            status === "complete" &&
-                                                "text-green-600",
-                                            status === "current" &&
-                                                "text-brainrot-coral",
-                                            status === "pending" &&
-                                                "text-brainrot-brown/50",
-                                            status === "error" &&
-                                                "text-red-500",
-                                        )}
-                                    >
-                                        {step.label}
-                                    </span>
-                                </div>
-
-                                {/* Connector Line */}
-                                {!isLast && (
-                                    <div
-                                        className={cn(
-                                            "mx-2 h-0.5 w-8 md:w-16 transition-colors",
-                                            status === "complete"
-                                                ? "bg-green-500"
-                                                : "bg-brainrot-orange/30",
-                                        )}
-                                    />
-                                )}
-                            </li>
-                        );
-                    })}
-                </ol>
-            </nav>
-        </div>
+                return (
+                    <div
+                        key={step.id}
+                        className={cn(
+                            "flex w-20 flex-col items-center gap-1 border-t-2 px-2 py-2.5 transition-colors md:w-24",
+                            status === "current" && "border-t-primary",
+                            status === "error" && "border-t-destructive",
+                            (status === "complete" || status === "pending") &&
+                                "border-t-transparent",
+                        )}
+                    >
+                        <Icon
+                            className={cn(
+                                "h-4 w-4 md:h-[18px] md:w-[18px]",
+                                status === "current" && "text-primary",
+                                status === "error" && "text-destructive",
+                                status === "complete" && "text-success",
+                                status === "pending" && "text-muted-foreground/50",
+                            )}
+                        />
+                        <span
+                            className={cn(
+                                "font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-wide",
+                                status === "current" && "text-foreground",
+                                status === "error" && "text-destructive",
+                                status === "complete" && "text-muted-foreground",
+                                status === "pending" && "text-muted-foreground/50",
+                            )}
+                        >
+                            {step.label}
+                        </span>
+                    </div>
+                );
+            })}
+        </nav>
     );
 }

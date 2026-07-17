@@ -14,9 +14,10 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 from services.video_service import VideoService
 from services.collection_service import create_collection, get_collection
+from storage.assets import get_asset, list_asset_keys
 
 from backend_pipeline.audio_generation.minimax_tts import (
     generate_audio_from_transcript,
@@ -35,18 +36,18 @@ def slugify(value: str) -> str:
 
 def get_background_video(videos_dir: Path | str, video: Optional[str]) -> Path:
     """
-    Randomly select a background video from the videos directory.
+    Randomly select a background video from a local videos directory.
     If "video" provided then select a video that matches the name else select a random video
     Returns the path to the selected video.
     """
     videos_path = Path(videos_dir)
-    
+
     if not videos_path.exists():
         raise FileNotFoundError(f"Background videos directory not found at {videos_dir}")
-    
+
     # Get all .mp4 files from the videos directory
     video_files = list(videos_path.glob("*.mp4"))
-    
+
     if not video_files or video_files == None:
         raise FileNotFoundError(f"No background videos found in {videos_dir}")
 
@@ -54,14 +55,40 @@ def get_background_video(videos_dir: Path | str, video: Optional[str]) -> Path:
         matching_videos = [f for f in video_files if video in f.name.lower()]
     else:
         matching_videos = []
-        
+
     if matching_videos:
         selected_video = matching_videos[0]
     else:
         # Randomly select one video
         selected_video = random.choice(video_files)
-    
+
     return selected_video
+
+
+def get_background_video_from_storage(video: Optional[str]) -> Path:
+    """
+    Select a background video from the configured R2 background location and
+    return a cached local path for ffmpeg.
+
+    Dedicated background buckets store videos at their root. A shared bucket
+    can opt into a prefix with R2_BACKGROUND_PREFIX.
+    """
+    prefix = os.getenv("R2_BACKGROUND_PREFIX", "").strip("/")
+    if prefix:
+        prefix += "/"
+    keys = [k for k in list_asset_keys(prefix) if k.lower().endswith(".mp4")]
+
+    if not keys:
+        location = f" under '{prefix}'" if prefix else " at the bucket root"
+        raise FileNotFoundError(f"No background videos found in storage{location}")
+
+    if video:
+        matching = [k for k in keys if video in Path(k).name.lower()]
+    else:
+        matching = []
+
+    selected_key = matching[0] if matching else random.choice(keys)
+    return get_asset(selected_key)
 
 
 def load_dialogue(path: Path) -> Dict[str, Any]:
@@ -177,9 +204,51 @@ def _build_educational_images_list(
     return educational_images
 
 
+def generate_audio_for_dialogue(
+    dialogue: List[Dict[str, Any]],
+    audio_dir: Path | str,
+    slug: str = "dialogue",
+) -> Dict[str, Any]:
+    """
+    Generate and concatenate TTS audio for a dialogue, independent of rendering.
+
+    Shared by the standalone audio-generation job and generate_video_from_dialogue,
+    so the "audio is fully finalized before the editor loads" pipeline shape and
+    the legacy all-in-one path stay in sync on exactly one implementation.
+
+    Args:
+        dialogue: List of dialogue line dicts (caption/speaker/emotion)
+        audio_dir: Directory to store generated audio assets
+        slug: Filesystem-safe name for this dialogue's audio files
+
+    Returns:
+        Dict with audio_file, total_duration, timings, word_timestamps
+        (see concatenate_audio_segments for the exact shape)
+    """
+    audio_dir = Path(audio_dir)
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    transcripts_payload = {"transcripts": dialogue}
+    segment_dir = audio_dir / slug / "segments"
+    segment_dir.mkdir(parents=True, exist_ok=True)
+
+    print("🎙️  Generating audio segments…")
+    audio_segments = generate_audio_from_transcript(
+        transcripts_payload,
+        output_dir=str(segment_dir),
+    )
+
+    audio_output = audio_dir / f"{slug}_full.mp3"
+    print("🔗 Concatenating audio segments…")
+    return concatenate_audio_segments(
+        audio_segments,
+        output_file=str(audio_output),
+    )
+
+
 def generate_video_from_dialogue(
     dialogue_data: Dict[str, Any],
-    background_video: Path | str,
+    background_video: Optional[Path | str],
     output_dir: Path | str,
     audio_dir: Path | str,
     user_id: int,
@@ -196,13 +265,15 @@ def generate_video_from_dialogue(
 
     Args:
         dialogue_data: Dictionary with 'title' and 'dialogue' keys
-        background_video: Path to background video or directory of videos
+        background_video: Path to background video or directory of videos.
+                          If None (or a directory with no videos), selects from
+                          storage under the backgrounds/ prefix.
         output_dir: Directory to store generated video
         audio_dir: Directory to store generated audio assets
         user_id: User ID for database entry
         collection_id: Optional existing collection ID. If not provided, creates new collection.
         image_dir: Optional directory containing educational images referenced in dialogue
-        storage_backend: Storage backend override ('s3' or 'local'). Uses env var if not set.
+        storage_backend: Storage backend override ('r2' or 'local'). Uses env var if not set.
         progress_callback: Optional callback function for progress updates.
                           Called with (job_id, current_stage, title)
         job_id: Job ID for progress tracking (required if progress_callback is provided)
@@ -211,7 +282,7 @@ def generate_video_from_dialogue(
     Returns:
         Dictionary with video info including video_id, storage_key, collection_id
     """
-    background_video_path = Path(background_video)
+    background_video_path = Path(background_video) if background_video else None
     output_dir = Path(output_dir)
     audio_dir = Path(audio_dir)
     image_dir_path = Path(image_dir) if image_dir else None
@@ -247,9 +318,6 @@ def generate_video_from_dialogue(
     output_dir.mkdir(parents=True, exist_ok=True)
     audio_dir.mkdir(parents=True, exist_ok=True)
 
-    # Determine if background_video is a directory or a single file
-    is_directory = background_video_path.is_dir()
-
     # === PROGRESS: Preparing assets ===
     if progress_callback and job_id:
         progress_callback(
@@ -257,13 +325,16 @@ def generate_video_from_dialogue(
             current_stage="preparing_assets",
             title=title,
         )
-    
-    # Select background video
-    if is_directory:
-            current_bg_video = get_background_video(background_video_path, video)
-            print(f"Background video selected: {current_bg_video}")
-    else:
+
+    # Select background video: explicit file > local directory > storage
+    if background_video_path and background_video_path.is_file():
         current_bg_video = background_video_path
+    elif background_video_path and background_video_path.is_dir() and list(background_video_path.glob("*.mp4")):
+        current_bg_video = get_background_video(background_video_path, video)
+        print(f"Background video selected: {current_bg_video}")
+    else:
+        current_bg_video = get_background_video_from_storage(video)
+        print(f"Background video selected from storage: {current_bg_video}")
     
     slug = slugify(title)
     print(f"\n=== Generating video: {title} ===")
@@ -280,31 +351,18 @@ def generate_video_from_dialogue(
         collection_id = create_collection(user_id, collection_title)
         print(f"\n✨ Created collection: '{collection_title}' (ID: {collection_id})")
 
-    # Step 2: Generate audio
-    transcripts_payload = {"transcripts": dialogue}
-
-    segment_dir = audio_dir / slug / "segments"
-    segment_dir.mkdir(parents=True, exist_ok=True)
-
-    # === PROGRESS: Audio generation ===
+    # Step 2: Generate audio (shared with the standalone audio-generation job)
     if progress_callback and job_id:
         progress_callback(
             job_id=job_id,
             current_stage="audio_generation",
             title=title,
         )
-    
-    print("🎙️  Generating audio segments…")
-    audio_segments = generate_audio_from_transcript(
-        transcripts_payload,
-        output_dir=str(segment_dir),
-    )
 
-    audio_output = audio_dir / f"{slug}_full.mp3"
-    print("🔗 Concatenating audio segments…")
-    audio_result = concatenate_audio_segments(
-        audio_segments,
-        output_file=str(audio_output),
+    audio_result = generate_audio_for_dialogue(
+        dialogue=dialogue,
+        audio_dir=audio_dir,
+        slug=slug,
     )
 
     # Build educational images list if image_dir is provided

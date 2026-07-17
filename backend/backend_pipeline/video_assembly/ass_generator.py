@@ -192,7 +192,7 @@ def create_ass_header(
     title: str = "Educational Video Captions",
     video_width: int = 1080,
     video_height: int = 1920,
-    font_name: str = "Arial Bold",
+    font_name: str = "Liberation Sans",
     font_size: int = 48,
 ) -> str:
     """
@@ -299,7 +299,7 @@ def generate_ass_subtitle_file(
     output_path: Optional[str] = None,
     title: str = "Educational Video Captions",
     video_size: tuple = (1080, 1920),
-    font_name: str = "Arial Bold",
+    font_name: str = "Liberation Sans",
     font_size: int = 48,
     timing_method: str = "proportional",
     max_words_per_chunk: int = 5,

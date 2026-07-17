@@ -6,7 +6,7 @@ export const WS_BASE_URL = "ws://localhost:8000";
 export type SourceType = "youtube" | "audio" | "text" | "pptx";
 
 // ============ Job Types ============
-export type JobType = "transcript_generation" | "video_generation";
+export type JobType = "transcript_generation" | "video_generation" | "audio_generation";
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
 export type TranscriptStage = "extracting_content" | "generating_dialogue";
 export type VideoStage =
@@ -14,6 +14,7 @@ export type VideoStage =
     | "audio_generation"
     | "video_assembly"
     | "uploading";
+export type AudioStage = "tts_generation" | "concatenation" | "uploading";
 
 // ============ Request Types ============
 export interface TranscriptRequest {
@@ -29,6 +30,54 @@ export interface VideoRequest {
     video: string;
     images?: File[];
     karaoke_captions?: boolean; // Default: true (karaoke mode ON)
+}
+
+// ============ Audio Generation Types (Phase 1: pipeline split) ============
+// generate-audio finalizes narration + real timing data with no rendering,
+// so the editor can load real timing before any overlay editing begins.
+
+export interface AudioRequest {
+    transcript: string; // JSON string of dialogue data (required)
+    user_id: number;
+    video: string; // Background video name
+}
+
+/** Real per-line timing, driven by actual TTS audio duration (not duration_estimate) */
+export interface LineTiming {
+    index: number;    // array position — used only to map line_id on arrival, then ignored
+    line_id?: string; // stable UUID matching DialogueLine.id; absent on legacy data
+    start: number;
+    end: number;
+    duration: number;
+    caption: string;
+    speaker: Speaker;
+    emotion: string;
+}
+
+/** Real word-level timing from MiniMax subtitle_file, merged into whole words */
+export interface WordTimestamp {
+    word: string;
+    start: number;
+    end: number;
+    line_index: number; // kept for legacy; prefer line_id
+    line_id?: string;   // stable UUID matching DialogueLine.id; absent on legacy data
+}
+
+export interface AudioResult {
+    audio_url: string;
+    line_timings: LineTiming[];
+    word_timestamps: WordTimestamp[];
+    background_video_url: string;
+}
+
+// ============ Export Types (Phase 1: renders from already-generated audio) ============
+
+export interface ExportRequest {
+    user_id: number;
+    video: string;
+    audio_url: string;
+    line_timings: string; // JSON-stringified LineTiming[]
+    karaoke_captions?: boolean;
 }
 
 // ============ Job Response Types ============
@@ -73,6 +122,7 @@ export interface ImageConfig {
 }
 
 export interface DialogueLine {
+    id?: string;             // UUID; optional while legacy transcripts are still accepted
     caption: string;
     speaker: Speaker;
     emotion?: "neutral" | "angry" | "excited" | "confused";
@@ -95,7 +145,7 @@ export interface TranscriptResult {
 export interface VideoResult {
     collection_id: number;
     video_id: number; // Single video
-    title: string;
+    title?: string; // Absent for the minimal Phase 1 export job
     access_url: string;
     storage_key: string;
 }
@@ -110,9 +160,9 @@ export interface ProgressUpdate {
     status: JobStatus;
     percentage: number;
     message: string;
-    current_stage?: TranscriptStage | VideoStage;
+    current_stage?: TranscriptStage | VideoStage | AudioStage;
     dialogue_title?: string; // New: single dialogue title
-    result?: TranscriptResult | VideoResult;
+    result?: TranscriptResult | VideoResult | AudioResult;
     error?: string;
     // DEPRECATED: Legacy multi-subtopic fields
     current_subtopic?: number;
@@ -122,7 +172,7 @@ export interface ProgressUpdate {
 
 // Type guards for results
 export function isTranscriptResult(
-    result: TranscriptResult | VideoResult | undefined,
+    result: TranscriptResult | VideoResult | AudioResult | undefined,
 ): result is TranscriptResult {
     return (
         result !== undefined && "dialogue" in result && !("video_id" in result)
@@ -130,10 +180,18 @@ export function isTranscriptResult(
 }
 
 export function isVideoResult(
-    result: TranscriptResult | VideoResult | undefined,
+    result: TranscriptResult | VideoResult | AudioResult | undefined,
 ): result is VideoResult {
     return (
         result !== undefined && "video_id" in result && "access_url" in result
+    );
+}
+
+export function isAudioResult(
+    result: TranscriptResult | VideoResult | AudioResult | undefined,
+): result is AudioResult {
+    return (
+        result !== undefined && "audio_url" in result && "line_timings" in result
     );
 }
 

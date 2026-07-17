@@ -1,7 +1,7 @@
 """Storage abstraction layer for video files.
 
 Supports multiple storage backends:
-- S3: AWS S3 storage for production
+- R2: Cloudflare R2 storage for production
 - Local: Local filesystem storage for development
 
 Usage:
