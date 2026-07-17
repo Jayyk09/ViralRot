@@ -44,7 +44,8 @@ export interface AudioRequest {
 
 /** Real per-line timing, driven by actual TTS audio duration (not duration_estimate) */
 export interface LineTiming {
-    index: number;
+    index: number;    // array position — used only to map line_id on arrival, then ignored
+    line_id?: string; // stable UUID matching DialogueLine.id; absent on legacy data
     start: number;
     end: number;
     duration: number;
@@ -58,7 +59,8 @@ export interface WordTimestamp {
     word: string;
     start: number;
     end: number;
-    line_index: number;
+    line_index: number; // kept for legacy; prefer line_id
+    line_id?: string;   // stable UUID matching DialogueLine.id; absent on legacy data
 }
 
 export interface AudioResult {
@@ -120,6 +122,7 @@ export interface ImageConfig {
 }
 
 export interface DialogueLine {
+    id?: string;             // UUID; optional while legacy transcripts are still accepted
     caption: string;
     speaker: Speaker;
     emotion?: "neutral" | "angry" | "excited" | "confused";

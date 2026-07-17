@@ -1,4 +1,5 @@
 """Cloudflare R2 storage backend implementation (S3-compatible API via boto3)."""
+import os
 from typing import BinaryIO, Dict, Any, List, Iterator
 
 import boto3
@@ -36,7 +37,11 @@ class R2StorageBackend(StorageBackend):
             access_key_id: R2 API token access key ID
             secret_access_key: R2 API token secret access key
         """
-        self.background_prefix = "backgrounds/"
+        # A dedicated background bucket usually stores clips at its root. Set
+        # R2_BACKGROUND_PREFIX=backgrounds/ when using a shared bucket instead.
+        self.background_prefix = os.getenv("R2_BACKGROUND_PREFIX", "").strip("/")
+        if self.background_prefix:
+            self.background_prefix += "/"
         self.bucket = bucket_name
         endpoint_url = f"https://{account_id}.r2.cloudflarestorage.com"
         self.s3 = boto3.client(
@@ -93,7 +98,7 @@ class R2StorageBackend(StorageBackend):
         items = []
         for obj in response.get("Contents", []):
             key = obj["Key"]
-            if key.endswith("/"):
+            if key.endswith("/") or not key.lower().endswith(".mp4"):
                 continue
             url = self.s3.generate_presigned_url(
                 "get_object",

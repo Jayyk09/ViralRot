@@ -67,16 +67,20 @@ def get_background_video(videos_dir: Path | str, video: Optional[str]) -> Path:
 
 def get_background_video_from_storage(video: Optional[str]) -> Path:
     """
-    Select a background video from storage (backgrounds/ prefix) and
+    Select a background video from the configured R2 background location and
     return a cached local path for ffmpeg.
 
-    If "video" provided then select a video that matches the name else
-    select a random video.
+    Dedicated background buckets store videos at their root. A shared bucket
+    can opt into a prefix with R2_BACKGROUND_PREFIX.
     """
-    keys = [k for k in list_asset_keys("backgrounds/") if k.endswith(".mp4")]
+    prefix = os.getenv("R2_BACKGROUND_PREFIX", "").strip("/")
+    if prefix:
+        prefix += "/"
+    keys = [k for k in list_asset_keys(prefix) if k.lower().endswith(".mp4")]
 
     if not keys:
-        raise FileNotFoundError("No background videos found in storage under 'backgrounds/'")
+        location = f" under '{prefix}'" if prefix else " at the bucket root"
+        raise FileNotFoundError(f"No background videos found in storage{location}")
 
     if video:
         matching = [k for k in keys if video in Path(k).name.lower()]

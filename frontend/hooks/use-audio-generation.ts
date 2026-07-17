@@ -19,6 +19,8 @@ import { useJobProgress } from "./use-video-generation";
 
 interface UseAudioGenerationReturn {
     generate: (request: Omit<AudioRequest, "user_id">) => Promise<void>;
+    /** Bypass TTS — inject a pre-loaded AudioResult directly (dev fixture mode). */
+    setFixture: (audio: AudioResult) => void;
     jobId: string | null;
     error: Error | null;
     isLoading: boolean;
@@ -32,6 +34,7 @@ interface UseAudioGenerationReturn {
 export function useAudioGeneration(userId: number = 1): UseAudioGenerationReturn {
     const [jobId, setJobId] = useState<string | null>(null);
     const [apiError, setApiError] = useState<Error | null>(null);
+    const [fixture, setFixtureState] = useState<AudioResult | null>(null);
 
     const {
         progress,
@@ -61,23 +64,31 @@ export function useAudioGeneration(userId: number = 1): UseAudioGenerationReturn
         [userId],
     );
 
+    const setFixture = useCallback((audio: AudioResult) => {
+        setFixtureState(audio);
+    }, []);
+
     const reset = useCallback(() => {
         setJobId(null);
         setApiError(null);
+        setFixtureState(null);
     }, []);
 
-    const audio =
+    const jobAudio =
         isComplete && progress?.result && isAudioResult(progress.result)
             ? progress.result
             : null;
 
+    const audio = fixture ?? jobAudio;
+
     return {
         generate,
+        setFixture,
         jobId,
         error: apiError || wsError,
-        isLoading,
-        isComplete,
-        isFailed,
+        isLoading: fixture ? false : isLoading,
+        isComplete: fixture ? true : isComplete,
+        isFailed: fixture ? false : isFailed,
         audio,
         reset,
     };

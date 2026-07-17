@@ -277,6 +277,7 @@ def generate_audio_from_transcript(
             audio_segments.append(
                 {
                     "index": idx,
+                    "line_id": segment.get("id"),
                     "file": output_file,
                     "caption": caption,
                     "speaker": speaker,
@@ -375,6 +376,7 @@ def concatenate_audio_segments(
         timings.append(
             {
                 "index": segment["index"],
+                "line_id": segment.get("line_id"),
                 "start": round(current_time, 3),
                 "end": round(current_time + duration, 3),
                 "duration": round(duration, 3),
@@ -392,6 +394,7 @@ def concatenate_audio_segments(
                     "start": round(current_time + word["start"], 3),
                     "end": round(current_time + word["end"], 3),
                     "line_index": segment["index"],
+                    "line_id": segment.get("line_id"),
                 }
             )
 

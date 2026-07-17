@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 import shutil
 from contextlib import asynccontextmanager
@@ -10,6 +11,7 @@ from uuid import uuid4
 
 import requests
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi.staticfiles import StaticFiles
 from typing import Literal
 
 from services.audio_service import AudioService
@@ -113,6 +115,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Opt-in local development fixtures. Generated media stays untracked and is
+# never exposed by production unless ENABLE_DEV_FIXTURES is explicitly set.
+if os.getenv("ENABLE_DEV_FIXTURES", "false").lower() == "true":
+    dev_fixtures_dir = BACKEND_DIR / "dev_fixtures"
+    dev_fixtures_dir.mkdir(parents=True, exist_ok=True)
+    app.mount(
+        "/dev/fixtures",
+        StaticFiles(directory=str(dev_fixtures_dir)),
+        name="dev_fixtures",
+    )
 
 @app.get("/")
 async def root():
@@ -824,14 +837,8 @@ async def _process_audio_job(
         ProgressService.update_job(job_id=job_id, current_stage="uploading")
 
         storage = get_storage_backend()
-        if storage.backend_name.startswith("Local"):
-            # Local backend never uploads backgrounds into its own storage
-            # dir - they're read straight from DIRS["background_videos"] -
-            # so presigning a "backgrounds/" key would point at a file that
-            # doesn't exist. Serve the real path directly instead.
-            background_video_url = f"file://{background_path.absolute()}"
-        else:
-            background_video_url = storage.generate_url(f"backgrounds/{background_path.name}")
+        background_prefix = getattr(storage, "background_prefix", "")
+        background_video_url = storage.generate_url(f"{background_prefix}{background_path.name}")
 
         audio_storage_key = f"audio/{user_id}/{session_id}.mp3"
         with open(audio_result["audio_file"], "rb") as audio_file:
@@ -1017,29 +1024,21 @@ async def batch_process_dialouge_generation(batch_request: BatchAudioRequest):
 # ============ Helper Functions ============
 
 def _resolve_background_video(video: Optional[str]) -> Path:
-    """Pick a background video from the local dir if populated, else storage."""
-    local_dir = DIRS["background_videos"]
-    if local_dir.exists() and list(local_dir.glob("*.mp4")):
-        return get_background_video(local_dir, video)
+    """Download the selected background video from R2 for FFmpeg."""
     return get_background_video_from_storage(video)
 
 
 def _validate_background_video():
-    """Validate that background videos are available (local dir or storage)."""
-    local_dir = DIRS["background_videos"]
-    if local_dir.exists() and list(local_dir.glob("*.mp4")):
-        return
-
+    """Validate that background videos are available in the configured R2 location."""
     storage = get_storage_backend()
-    if any(key.endswith(".mp4") for key in storage.iter_keys("backgrounds/")):
+    prefix = getattr(storage, "background_prefix", "")
+    if any(key.lower().endswith(".mp4") for key in storage.iter_keys(prefix)):
         return
 
+    location = f" under '{prefix}'" if prefix else " at the bucket root"
     raise HTTPException(
         status_code=500,
-        detail=(
-            f"No background videos found in {local_dir} "
-            f"or in storage under 'backgrounds/'"
-        ),
+        detail=f"No background videos found in R2{location}",
     )
 
 

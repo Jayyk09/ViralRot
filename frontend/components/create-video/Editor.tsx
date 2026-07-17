@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchBackgroundURLs, BackgroundUrl, BackgroundUrls } from "@/lib/api";
-import { TranscriptResult, ImageConfig } from "@/lib/types";
+import { TranscriptResult, ImageConfig, AudioResult } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useImageEditor } from "@/hooks/use-image-editor";
 import { useAudioGeneration, useExportVideo } from "@/hooks/use-audio-generation";
@@ -14,6 +14,8 @@ import { Loader2 } from "lucide-react";
 
 interface EditorProps {
     transcript: TranscriptResult;
+    /** Pre-loaded audio result — skips TTS job entirely (dev fixture mode). */
+    initialAudio?: AudioResult;
 }
 
 interface PlacingImage {
@@ -22,7 +24,7 @@ interface PlacingImage {
     lineIdx: number;
 }
 
-export function Editor({ transcript }: EditorProps) {
+export function Editor({ transcript, initialAudio }: EditorProps) {
     const [videoOptions, setVideoOptions] = useState<BackgroundUrls | null>(null);
     const [selectedVideo, setSelectedVideo] = useState<BackgroundUrl | null>(null);
     const [selectedLineIdx, setSelectedLineIdx] = useState(0);
@@ -48,11 +50,13 @@ export function Editor({ transcript }: EditorProps) {
             .catch(console.error);
     }, []);
 
-    // Finalize narration audio + real per-line/per-word timing exactly once,
-    // before any preview/editing happens - the Phase 1 pipeline split. No
-    // further TTS calls happen after this completes; overlay editing (Phase 2)
-    // and export both build on this same finalized audio.
+    // Finalize narration audio exactly once. If initialAudio is provided (dev
+    // fixture mode) we skip the TTS job entirely and use it as-is.
     useEffect(() => {
+        if (initialAudio) {
+            audioGen.setFixture(initialAudio);
+            return;
+        }
         if (audioGenStartedRef.current) return;
         if (!selectedVideo || lines.length === 0) return;
 
