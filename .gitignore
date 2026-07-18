@@ -22,6 +22,16 @@ test_audio_minimax/
 test_configs/
 backend/dev_fixtures/
 
+# Local agent/reference material
+/MISSION.md
+/NOTES.md
+/RESOURCES.md
+/assets/
+/context/
+/learning-records/
+/lessons/
+/reference/
+
 # Backend generated assets (videos, audio, output)
 backend/assets/audio/generated/
 backend/assets/output/
