@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import requests
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
@@ -18,6 +18,12 @@ from services.audio_service import AudioService
 from services.video_service import VideoService, get_collection_videos
 from services.collection_service import create_collection, get_collection, get_user_collections, find_last_collection
 from services.progress_service import ProgressService, set_event_loop
+from services.repositories.editor_repository import (
+    EditorLineGeneratingError,
+    EditorProjectNotFoundError,
+    EditorRepository,
+    EditorRevisionConflictError,
+)
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
@@ -79,6 +85,25 @@ class VideoGenerationRequest(BaseModel):
     background_video: Optional[str] = "minecraft.mp4"
     karaoke_captions: bool = True  # Default ON: word-by-word yellow highlighting
 
+
+class EditorLineCreate(BaseModel):
+    caption: str
+    speaker: str
+    emotion: Optional[str] = None
+
+
+class EditorProjectCreate(BaseModel):
+    title: str
+    background_video_id: Optional[str] = None
+    dialogue: List[EditorLineCreate]
+
+
+class EditorLineUpdate(BaseModel):
+    caption: str
+    speaker: str
+    emotion: Optional[str] = None
+    expected_revision: int
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle handler for startup and shutdown tasks."""
@@ -91,6 +116,9 @@ async def lifespan(app: FastAPI):
     
     # Shutdown: Clean up expired jobs and transcripts
     expired_jobs = ProgressService.cleanup_expired()
+
+
+editor_repository = EditorRepository()
 
 
 app = FastAPI(
@@ -340,6 +368,105 @@ async def _run_blocking(func, *args, **kwargs):
     return await asyncio.to_thread(func, *args, **kwargs)
 
 
+# ============ Editor Persistence Endpoints ============
+
+@app.post("/editor/projects", status_code=201)
+async def create_editor_project(
+    payload: EditorProjectCreate,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Import a dialogue as a project.
+
+    Normal Gemini generation is persisted by `_process_transcript_job` before
+    its result reaches the frontend. This endpoint remains useful for manually
+    authored or legacy dialogues that did not originate from that job.
+    """
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Project title cannot be blank")
+    if not payload.dialogue:
+        raise HTTPException(status_code=422, detail="A project requires at least one dialogue line")
+
+    dialogue = []
+    for index, line in enumerate(payload.dialogue):
+        caption = line.caption.strip()
+        speaker = line.speaker.strip()
+        if not caption or not speaker:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Dialogue line {index} requires a caption and speaker",
+            )
+        dialogue.append(
+            {
+                "caption": caption,
+                "speaker": speaker,
+                "emotion": line.emotion.strip() if line.emotion else None,
+            }
+        )
+
+    try:
+        project = await _run_blocking(
+            editor_repository.create_project,
+            user_id,
+            title,
+            payload.background_video_id,
+            dialogue,
+        )
+        return {"project": project}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/editor/projects/{project_id}")
+async def get_editor_project(
+    project_id: UUID,
+    user_id: int = Depends(get_current_user_id),
+):
+    try:
+        project = await _run_blocking(
+            editor_repository.get_project, project_id, user_id
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if project is None:
+        raise HTTPException(status_code=404, detail="Editor project not found")
+    return {"project": project}
+
+
+@app.patch("/editor/projects/{project_id}/lines/{line_id}")
+async def update_editor_line(
+    project_id: UUID,
+    line_id: UUID,
+    payload: EditorLineUpdate,
+    user_id: int = Depends(get_current_user_id),
+):
+    caption = payload.caption.strip()
+    speaker = payload.speaker.strip()
+    if not caption or not speaker:
+        raise HTTPException(status_code=422, detail="Caption and speaker cannot be blank")
+    if payload.expected_revision < 1:
+        raise HTTPException(status_code=422, detail="expected_revision must be at least 1")
+
+    try:
+        line = await _run_blocking(
+            editor_repository.update_line,
+            project_id,
+            line_id,
+            user_id,
+            caption,
+            speaker,
+            payload.emotion.strip() if payload.emotion else None,
+            payload.expected_revision,
+        )
+        return {"line": line}
+    except EditorProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (EditorRevisionConflictError, EditorLineGeneratingError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 # ============ Async Job Endpoints (with Progress Tracking) ============
 
 @app.post("/jobs/generate-transcript")
@@ -468,12 +595,32 @@ async def _process_transcript_job(
             )
             return
         
-        # Complete job with result
+        # Persist Gemini's output before exposing it to the editor. The browser
+        # receives a project ID, loads that project, and sends only later edits.
+        generated_dialogue = dialogue.model_dump()
+        project = await _run_blocking(
+            editor_repository.create_project,
+            user_id,
+            generated_dialogue["title"],
+            None,
+            [
+                {
+                    "caption": line["caption"],
+                    "speaker": line["speaker"],
+                    "emotion": line.get("emotion"),
+                }
+                for line in generated_dialogue["dialogue"]
+            ],
+        )
+
         ProgressService.update_job(
             job_id=job_id,
             status="completed",
             result={
-                "dialogue": dialogue.model_dump()
+                "project_id": str(project["id"]),
+                # Kept during frontend migration; the project ID is now the
+                # canonical handle and GET /editor/projects/{id} reloads it.
+                "dialogue": generated_dialogue,
             },
         )
     

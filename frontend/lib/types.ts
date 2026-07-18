@@ -138,6 +138,8 @@ export interface SingleDialogue {
 }
 
 export interface TranscriptResult {
+    /** Persisted editor project created by the backend transcript job. */
+    project_id?: string; // Optional only for legacy responses and local fixtures
     dialogue: SingleDialogue;
 }
 

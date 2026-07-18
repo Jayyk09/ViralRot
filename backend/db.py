@@ -5,8 +5,10 @@ from typing import Optional
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extensions import connection as PGConnection
+from psycopg2.extras import register_uuid
 
 load_dotenv()
+register_uuid()
 
 DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
