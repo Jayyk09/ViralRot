@@ -66,23 +66,18 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
 
     const handleStartTranscript = async () => {
         const sourceType = getSourceType();
-        if (!sourceType) {
-            alert(
-                "Please provide a YouTube URL, text content, or upload a file",
-            );
+        if (!sourceType || (sourceType !== "text" && sourceType !== "youtube")) {
+            alert("Project generation currently supports text and YouTube sources");
             return;
         }
+        const content = sourceType === "youtube" ? youtubeUrl : textContent;
+        if (!content) return;
 
         try {
             await workflow.startTranscript({
                 source_type: sourceType,
-                content:
-                    activeTab === "youtube"
-                        ? youtubeUrl
-                        : activeTab === "text"
-                          ? textContent
-                          : undefined,
-                file: activeTab === "upload" ? file || undefined : undefined,
+                content,
+                background_video_id: "minecraft",
             });
         } catch (error) {
             console.error("Error starting transcript:", error);

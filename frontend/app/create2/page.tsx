@@ -5,7 +5,8 @@ import { TranscriptResult, AudioResult, API_BASE_URL } from "@/lib/types";
 import { Editor } from "@/components/create-video/Editor";
 
 // UUIDs are stable — baked in to match dev_fixtures/audio_result.json.
-const MOCK_TRANSCRIPT: TranscriptResult = {
+const MOCK_TRANSCRIPT = {
+    project_id: "00000000-0000-4000-8000-000000000001",
     dialogue: {
         title: "Mock Transcript — UI Dev",
         dialogue: [
@@ -18,7 +19,7 @@ const MOCK_TRANSCRIPT: TranscriptResult = {
             { id: "a1b2c3d4-0001-0000-0000-000000000007", speaker: "PETER",  caption: "Full capacity, baby. Like a dolphin at college.",                                                              emotion: "excited",  duration_estimate: 2.5 },
         ],
     },
-};
+} as unknown as TranscriptResult;
 
 const USE_FIXTURE = process.env.NEXT_PUBLIC_DEV_FIXTURE === "true";
 

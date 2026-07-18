@@ -49,10 +49,13 @@ export default function CreatePage() {
         file?: File,
     ) => {
         try {
+            if ((sourceType !== "text" && sourceType !== "youtube") || !content) {
+                throw new Error("Project generation currently supports text and YouTube sources");
+            }
             await workflow.startTranscript({
                 source_type: sourceType,
                 content,
-                file,
+                background_video_id: "minecraft",
             });
         } catch (error) {
             console.error("Error starting transcript:", error);

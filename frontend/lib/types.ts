@@ -18,18 +18,16 @@ export type AudioStage = "tts_generation" | "concatenation" | "uploading";
 
 // ============ Request Types ============
 export interface TranscriptRequest {
-    source_type: SourceType;
+    source_type: "youtube" | "text";
     user_id: number;
-    content?: string; // Required for youtube/text
-    file?: File; // Required for audio/pptx
+    content: string;
+    background_video_id: string;
 }
 
 export interface VideoRequest {
-    transcript: string; // JSON string of dialogue data (required)
+    project_id: string;
     user_id: number;
-    video: string;
-    images?: File[];
-    karaoke_captions?: boolean; // Default: true (karaoke mode ON)
+    karaoke_captions?: boolean;
 }
 
 // ============ Audio Generation Types (Phase 1: pipeline split) ============
@@ -137,10 +135,29 @@ export interface SingleDialogue {
     dialogue: DialogueLine[];
 }
 
+export interface ProjectGenerationResult {
+    project_id: string;
+}
+
+/** Hydrated editor data loaded after project generation completes. */
 export interface TranscriptResult {
-    /** Persisted editor project created by the backend transcript job. */
-    project_id?: string; // Optional only for legacy responses and local fixtures
-    dialogue: SingleDialogue;
+    project_id: string;
+    dialogue: Omit<SingleDialogue, "dialogue"> & { dialogue: EditorLineRecord[] };
+}
+
+export interface EditorLineRecord extends DialogueLine {
+    id: string;
+    position: number;
+    revision: number;
+    audio_status: "missing" | "generating" | "ready" | "stale" | "failed";
+}
+
+export interface EditorProject {
+    id: string;
+    title: string;
+    background_video_id: string | null;
+    revision: number;
+    dialogue: EditorLineRecord[];
 }
 
 // ============ Video Result Types ============
@@ -164,7 +181,7 @@ export interface ProgressUpdate {
     message: string;
     current_stage?: TranscriptStage | VideoStage | AudioStage;
     dialogue_title?: string; // New: single dialogue title
-    result?: TranscriptResult | VideoResult | AudioResult;
+    result?: ProjectGenerationResult | VideoResult | AudioResult;
     error?: string;
     // DEPRECATED: Legacy multi-subtopic fields
     current_subtopic?: number;
@@ -173,16 +190,14 @@ export interface ProgressUpdate {
 }
 
 // Type guards for results
-export function isTranscriptResult(
-    result: TranscriptResult | VideoResult | AudioResult | undefined,
-): result is TranscriptResult {
-    return (
-        result !== undefined && "dialogue" in result && !("video_id" in result)
-    );
+export function isProjectGenerationResult(
+    result: ProjectGenerationResult | VideoResult | AudioResult | undefined,
+): result is ProjectGenerationResult {
+    return result !== undefined && "project_id" in result;
 }
 
 export function isVideoResult(
-    result: TranscriptResult | VideoResult | AudioResult | undefined,
+    result: ProjectGenerationResult | VideoResult | AudioResult | undefined,
 ): result is VideoResult {
     return (
         result !== undefined && "video_id" in result && "access_url" in result
@@ -190,7 +205,7 @@ export function isVideoResult(
 }
 
 export function isAudioResult(
-    result: TranscriptResult | VideoResult | AudioResult | undefined,
+    result: ProjectGenerationResult | VideoResult | AudioResult | undefined,
 ): result is AudioResult {
     return (
         result !== undefined && "audio_url" in result && "line_timings" in result

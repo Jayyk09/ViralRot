@@ -1,9 +1,9 @@
 """Persistence operations for editor projects and dialogue lines."""
 
-from typing import Dict, List, NotRequired, Optional, Sequence, TypedDict
+from typing import Dict, List, NotRequired, Optional, TypedDict
 from uuid import UUID, uuid4
 
-from psycopg2.extensions import cursor as PGCursor
+from psycopg2.extras import RealDictCursor
 
 from db import get_db_conn
 
@@ -28,6 +28,10 @@ class EditorLineGeneratingError(Exception):
     """Raised when a line is edited while its audio is being generated."""
 
 
+class EditorInvalidOrderError(Exception):
+    """Raised when a reorder request does not contain every project line once."""
+
+
 class EditorRepository:
     """Store and retrieve editor projects using short, explicit transactions."""
 
@@ -42,7 +46,7 @@ class EditorRepository:
         conn = get_db_conn()
         try:
             with conn:
-                with conn.cursor() as cur:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute(
                         """
                         INSERT INTO editor_projects (id, user_id, title, background_video_id)
@@ -73,8 +77,40 @@ class EditorRepository:
     def get_project(self, project_id: UUID, user_id: int) -> Optional[Dict[str, object]]:
         conn = get_db_conn()
         try:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 return self._get_project(cur, project_id, user_id, required=False)
+        finally:
+            conn.close()
+
+    def update_project(
+        self,
+        project_id: UUID,
+        user_id: int,
+        title: str,
+        background_video_id: Optional[str],
+        expected_revision: int,
+    ) -> Dict[str, object]:
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute(
+                        """
+                        UPDATE editor_projects
+                        SET title = %s,
+                            background_video_id = %s,
+                            revision = revision + 1,
+                            updated_at = NOW()
+                        WHERE id = %s AND user_id = %s AND revision = %s
+                        RETURNING id
+                        """,
+                        (title, background_video_id, project_id, user_id, expected_revision),
+                    )
+                    if cur.fetchone() is None:
+                        self._raise_project_update_error(
+                            cur, project_id, user_id, expected_revision
+                        )
+                    return self._get_project(cur, project_id, user_id)
         finally:
             conn.close()
 
@@ -91,7 +127,7 @@ class EditorRepository:
         conn = get_db_conn()
         try:
             with conn:
-                with conn.cursor() as cur:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute(
                         """
                         UPDATE dialogue_lines AS line
@@ -127,40 +163,157 @@ class EditorRepository:
                     )
                     row = cur.fetchone()
                     if row is None:
-                        self._raise_update_error(
+                        self._raise_line_update_error(
                             cur, project_id, line_id, user_id, expected_revision
                         )
 
-                    # Any dialogue edit makes the previously concatenated audio stale.
+                    self._invalidate_composition(cur, project_id, user_id)
+                    return dict(row)
+        finally:
+            conn.close()
+
+    def add_line(
+        self,
+        project_id: UUID,
+        user_id: int,
+        line: EditorLineInput,
+        position: Optional[int],
+        expected_revision: int,
+    ) -> Dict[str, object]:
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    self._lock_project(cur, project_id, user_id, expected_revision)
+                    cur.execute(
+                        "SELECT COUNT(*) AS count FROM dialogue_lines WHERE project_id = %s",
+                        (project_id,),
+                    )
+                    count = int(cur.fetchone()["count"])
+                    insert_at = count if position is None else position
+                    if insert_at < 0 or insert_at > count:
+                        raise EditorInvalidOrderError(
+                            f"Position must be between 0 and {count}"
+                        )
+
+                    cur.execute("SET CONSTRAINTS uq_dialogue_lines_project_position DEFERRED")
                     cur.execute(
                         """
-                        UPDATE editor_projects
-                        SET active_composition_id = NULL, updated_at = NOW()
-                        WHERE id = %s AND user_id = %s
+                        UPDATE dialogue_lines
+                        SET position = position + 1, updated_at = NOW()
+                        WHERE project_id = %s AND position >= %s
                         """,
-                        (project_id, user_id),
+                        (project_id, insert_at),
                     )
-                    return self._line_from_row(row)
+                    cur.execute(
+                        """
+                        INSERT INTO dialogue_lines
+                            (id, project_id, position, caption, speaker, emotion)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            uuid4(),
+                            project_id,
+                            insert_at,
+                            line["caption"],
+                            line["speaker"],
+                            line.get("emotion"),
+                        ),
+                    )
+                    self._advance_project_revision(cur, project_id, user_id)
+                    return self._get_project(cur, project_id, user_id)
+        finally:
+            conn.close()
+
+    def delete_line(
+        self,
+        project_id: UUID,
+        line_id: UUID,
+        user_id: int,
+        expected_revision: int,
+    ) -> Dict[str, object]:
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    self._lock_project(cur, project_id, user_id, expected_revision)
+                    cur.execute(
+                        """
+                        DELETE FROM dialogue_lines
+                        WHERE id = %s AND project_id = %s
+                        RETURNING position
+                        """,
+                        (line_id, project_id),
+                    )
+                    deleted = cur.fetchone()
+                    if deleted is None:
+                        raise EditorProjectNotFoundError("Dialogue line not found")
+
+                    cur.execute("SET CONSTRAINTS uq_dialogue_lines_project_position DEFERRED")
+                    cur.execute(
+                        """
+                        UPDATE dialogue_lines
+                        SET position = position - 1, updated_at = NOW()
+                        WHERE project_id = %s AND position > %s
+                        """,
+                        (project_id, deleted["position"]),
+                    )
+                    self._advance_project_revision(cur, project_id, user_id)
+                    return self._get_project(cur, project_id, user_id)
+        finally:
+            conn.close()
+
+    def reorder_lines(
+        self,
+        project_id: UUID,
+        user_id: int,
+        line_ids: List[UUID],
+        expected_revision: int,
+    ) -> Dict[str, object]:
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    self._lock_project(cur, project_id, user_id, expected_revision)
+                    cur.execute(
+                        "SELECT id FROM dialogue_lines WHERE project_id = %s ORDER BY position FOR UPDATE",
+                        (project_id,),
+                    )
+                    current_ids = [row["id"] for row in cur.fetchall()]
+                    if len(line_ids) != len(set(line_ids)) or set(line_ids) != set(current_ids):
+                        raise EditorInvalidOrderError(
+                            "line_ids must contain every project dialogue line exactly once"
+                        )
+
+                    cur.execute("SET CONSTRAINTS uq_dialogue_lines_project_position DEFERRED")
+                    for position, line_id in enumerate(line_ids):
+                        cur.execute(
+                            """
+                            UPDATE dialogue_lines
+                            SET position = %s, updated_at = NOW()
+                            WHERE id = %s AND project_id = %s
+                            """,
+                            (position, line_id, project_id),
+                        )
+                    self._advance_project_revision(cur, project_id, user_id)
+                    return self._get_project(cur, project_id, user_id)
         finally:
             conn.close()
 
     def _get_project(
         self,
-        cur: PGCursor,
+        cur: RealDictCursor,
         project_id: UUID,
         user_id: int,
         required: bool = True,
     ) -> Optional[Dict[str, object]]:
-        """Load one owned project and its ordered dialogue in the same connection.
-
-        The joins expose storage keys for the currently active composition and
-        segment; URLs are generated later rather than persisted in Postgres.
-        """
+        """Load one owned project and its ordered dialogue in the same connection."""
         cur.execute(
             """
             SELECT project.id, project.user_id, project.title,
                    project.background_video_id, project.revision,
-                   project.active_composition_id, composition.storage_key,
+                   project.active_composition_id,
+                   composition.storage_key AS active_composition_storage_key,
                    project.created_at, project.updated_at
             FROM editor_projects AS project
             LEFT JOIN audio_compositions AS composition
@@ -180,7 +333,8 @@ class EditorRepository:
             SELECT line.id, line.position, line.caption, line.speaker,
                    line.emotion, line.revision, line.audio_status,
                    line.audio_error, line.active_segment_id,
-                   line.created_at, line.updated_at, segment.storage_key
+                   line.created_at, line.updated_at,
+                   segment.storage_key AS active_segment_storage_key
             FROM dialogue_lines AS line
             LEFT JOIN audio_segments AS segment
               ON segment.id = line.active_segment_id
@@ -189,39 +343,82 @@ class EditorRepository:
             """,
             (project_id,),
         )
-        lines = []
-        for row in cur.fetchall():
-            item = self._line_from_row(row[:11])
-            item["active_segment_storage_key"] = row[11]
-            lines.append(item)
+        result = dict(project)
+        result["dialogue"] = [dict(row) for row in cur.fetchall()]
+        return result
 
-        return {
-            "id": project[0],
-            "user_id": project[1],
-            "title": project[2],
-            "background_video_id": project[3],
-            "revision": project[4],
-            "active_composition_id": project[5],
-            "active_composition_storage_key": project[6],
-            "created_at": project[7],
-            "updated_at": project[8],
-            "dialogue": lines,
-        }
-
-    def _raise_update_error(
+    def _lock_project(
         self,
-        cur: PGCursor,
+        cur: RealDictCursor,
+        project_id: UUID,
+        user_id: int,
+        expected_revision: int,
+    ) -> None:
+        cur.execute(
+            "SELECT revision FROM editor_projects WHERE id = %s AND user_id = %s FOR UPDATE",
+            (project_id, user_id),
+        )
+        project = cur.fetchone()
+        if project is None:
+            raise EditorProjectNotFoundError("Editor project not found")
+        if project["revision"] != expected_revision:
+            raise EditorRevisionConflictError(
+                f"Expected project revision {expected_revision}, but current revision is {project['revision']}"
+            )
+
+    def _advance_project_revision(
+        self, cur: RealDictCursor, project_id: UUID, user_id: int
+    ) -> None:
+        cur.execute(
+            """
+            UPDATE editor_projects
+            SET revision = revision + 1,
+                active_composition_id = NULL,
+                updated_at = NOW()
+            WHERE id = %s AND user_id = %s
+            """,
+            (project_id, user_id),
+        )
+
+    def _invalidate_composition(
+        self, cur: RealDictCursor, project_id: UUID, user_id: int
+    ) -> None:
+        cur.execute(
+            """
+            UPDATE editor_projects
+            SET active_composition_id = NULL, updated_at = NOW()
+            WHERE id = %s AND user_id = %s
+            """,
+            (project_id, user_id),
+        )
+
+    def _raise_project_update_error(
+        self,
+        cur: RealDictCursor,
+        project_id: UUID,
+        user_id: int,
+        expected_revision: int,
+    ) -> None:
+        cur.execute(
+            "SELECT revision FROM editor_projects WHERE id = %s AND user_id = %s",
+            (project_id, user_id),
+        )
+        current = cur.fetchone()
+        if current is None:
+            raise EditorProjectNotFoundError("Editor project not found")
+        raise EditorRevisionConflictError(
+            f"Expected project revision {expected_revision}, but current revision is {current['revision']}"
+        )
+
+    def _raise_line_update_error(
+        self,
+        cur: RealDictCursor,
         project_id: UUID,
         line_id: UUID,
         user_id: int,
         expected_revision: int,
     ) -> None:
-        """Explain why the conditional UPDATE changed no rows.
-
-        The UPDATE can fail because the resource does not exist, audio generation
-        currently owns the line, or another client already advanced its revision.
-        Convert those cases into the domain error used by the API's 404/409 response.
-        """
+        """Classify why the conditional line update changed no rows."""
         cur.execute(
             """
             SELECT line.revision, line.audio_status
@@ -234,24 +431,10 @@ class EditorRepository:
         current = cur.fetchone()
         if current is None:
             raise EditorProjectNotFoundError("Editor project or dialogue line not found")
-        if current[1] == "generating":
-            raise EditorLineGeneratingError("Dialogue cannot be edited while audio is generating")
+        if current["audio_status"] == "generating":
+            raise EditorLineGeneratingError(
+                "Dialogue cannot be edited while audio is generating"
+            )
         raise EditorRevisionConflictError(
-            f"Expected revision {expected_revision}, but current revision is {current[0]}"
+            f"Expected revision {expected_revision}, but current revision is {current['revision']}"
         )
-
-    @staticmethod
-    def _line_from_row(row: Sequence[object]) -> Dict[str, object]:
-        return {
-            "id": row[0],
-            "position": row[1],
-            "caption": row[2],
-            "speaker": row[3],
-            "emotion": row[4],
-            "revision": row[5],
-            "audio_status": row[6],
-            "audio_error": row[7],
-            "active_segment_id": row[8],
-            "created_at": row[9],
-            "updated_at": row[10],
-        }

@@ -6,11 +6,16 @@ import {
     TranscriptRequest,
     VideoRequest,
     SingleDialogue,
-    isTranscriptResult,
+    isProjectGenerationResult,
     isVideoResult,
 } from "@/lib/types";
 import { JobProgressManager, pollJobProgress } from "@/lib/websocket";
-import { generateTranscript, generateVideo } from "@/lib/api";
+import {
+    fetchEditorProject,
+    generateTranscript,
+    generateVideo,
+    updateEditorLine,
+} from "@/lib/api";
 
 // ============ useJobProgress Hook ============
 
@@ -162,6 +167,8 @@ export function useTranscriptGeneration(
 ): UseTranscriptGenerationReturn {
     const [jobId, setJobId] = useState<string | null>(null);
     const [apiError, setApiError] = useState<Error | null>(null);
+    const [transcript, setTranscript] = useState<TranscriptResult | null>(null);
+    const [isLoadingProject, setIsLoadingProject] = useState(false);
 
     const {
         progress,
@@ -174,6 +181,7 @@ export function useTranscriptGeneration(
         async (request: Omit<TranscriptRequest, "user_id">) => {
             setApiError(null);
             setJobId(null);
+            setTranscript(null);
 
             try {
                 const response = await generateTranscript({
@@ -193,17 +201,37 @@ export function useTranscriptGeneration(
         [userId],
     );
 
+    useEffect(() => {
+        if (!isComplete || !isProjectGenerationResult(progress?.result)) return;
+        const projectId = progress.result.project_id;
+        setIsLoadingProject(true);
+        fetchEditorProject(projectId)
+            .then((project) => {
+                setTranscript({
+                    project_id: project.id,
+                    dialogue: {
+                        title: project.title,
+                        dialogue: project.dialogue,
+                    },
+                });
+            })
+            .catch((error) => {
+                setApiError(
+                    error instanceof Error
+                        ? error
+                        : new Error("Failed to load generated project"),
+                );
+            })
+            .finally(() => setIsLoadingProject(false));
+    }, [isComplete, progress?.result]);
+
     const reset = useCallback(() => {
         setJobId(null);
         setApiError(null);
+        setTranscript(null);
+        setIsLoadingProject(false);
     }, []);
 
-    const transcript =
-        isComplete && progress?.result && isTranscriptResult(progress.result)
-            ? progress.result
-            : null;
-
-    // Convenience accessor for the single dialogue
     const dialogue = transcript?.dialogue ?? null;
 
     return {
@@ -211,8 +239,8 @@ export function useTranscriptGeneration(
         jobId,
         progress,
         error: apiError || wsError,
-        isLoading,
-        isComplete,
+        isLoading: isLoading || isLoadingProject,
+        isComplete: isComplete && transcript !== null,
         transcript,
         dialogue,
         reset,
@@ -440,25 +468,49 @@ export function useFullVideoWorkflow(
 
     const startVideo = useCallback(
         async (options?: { images?: File[]; updatedTranscript?: string }) => {
-            const dialogueData =
-                options?.updatedTranscript ||
-                (transcriptGen.transcript?.dialogue
-                    ? JSON.stringify({
-                          dialogue_data: transcriptGen.transcript.dialogue,
-                      })
-                    : null);
+            const transcript = transcriptGen.transcript;
+            if (!transcript?.project_id) {
+                throw new Error("No persisted project available. Generate a project first.");
+            }
 
-            if (!dialogueData) {
-                throw new Error(
-                    "No transcript available. Generate transcript first.",
+            // The database remains authoritative. Persist caption/speaker/emotion
+            // edits before asking the backend to generate from this project ID.
+            if (options?.updatedTranscript) {
+                const parsed = JSON.parse(options.updatedTranscript) as {
+                    dialogue?: { dialogue?: Array<{
+                        id?: string;
+                        caption: string;
+                        speaker: string;
+                        emotion?: string;
+                        revision?: number;
+                    }> };
+                };
+                const originalById = new Map(
+                    transcript.dialogue.dialogue
+                        .filter((line) => line.id)
+                        .map((line) => [line.id!, line]),
                 );
+                const changed = (parsed.dialogue?.dialogue ?? []).filter((line) => {
+                    if (!line.id) return false;
+                    const original = originalById.get(line.id);
+                    return original && (
+                        original.caption !== line.caption ||
+                        original.speaker !== line.speaker ||
+                        original.emotion !== line.emotion
+                    );
+                });
+                await Promise.all(changed.map((line) =>
+                    updateEditorLine(transcript.project_id, line.id!, {
+                        caption: line.caption,
+                        speaker: line.speaker,
+                        emotion: line.emotion,
+                        expected_revision: line.revision ?? originalById.get(line.id!)!.revision,
+                    })
+                ));
             }
 
             setStep("video");
-            await videoGen.generate({
-                transcript: dialogueData,
-                images: options?.images,
-            });
+            await videoGen.generate({ project_id: transcript.project_id });
         },
         [transcriptGen.transcript, videoGen],
     );
