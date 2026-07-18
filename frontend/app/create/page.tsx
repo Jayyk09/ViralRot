@@ -5,8 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { XCircle, RotateCcw, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useFullVideoWorkflow } from "@/hooks/use-video-generation";
-import { SourceType } from "@/lib/types";
-
 import {
     CreateStepIndicator,
     CreateStep,
@@ -43,18 +41,10 @@ export default function CreatePage() {
         }
     };
 
-    const handleSourceSubmit = async (
-        sourceType: SourceType,
-        content?: string,
-        file?: File,
-    ) => {
+    const handleSourceSubmit = async (description: string) => {
         try {
-            if ((sourceType !== "text" && sourceType !== "youtube") || !content) {
-                throw new Error("Project generation currently supports text and YouTube sources");
-            }
             await workflow.startTranscript({
-                source_type: sourceType,
-                content,
+                description,
                 background_video_id: "minecraft",
             });
         } catch (error) {

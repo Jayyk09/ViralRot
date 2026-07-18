@@ -9,23 +9,17 @@ import {
     DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
-    Upload,
-    LinkIcon,
     Sparkles,
-    FileText,
     CheckCircle2,
     XCircle,
     Loader2,
     RotateCcw,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFullVideoWorkflow } from "@/hooks/use-video-generation";
-import { SourceType } from "@/lib/types";
 import { getStageDescription } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { TranscriptEditor } from "@/components/transcript-editor";
@@ -37,46 +31,17 @@ interface CreateVideoModalProps {
 
 export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
     const queryClient = useQueryClient();
-    const [youtubeUrl, setYoutubeUrl] = useState("");
-    const [textContent, setTextContent] = useState("");
-    const [file, setFile] = useState<File | null>(null);
-    const [activeTab, setActiveTab] = useState<"youtube" | "text" | "upload">(
-        "youtube",
-    );
+    const [description, setDescription] = useState("");
 
     const workflow = useFullVideoWorkflow(1); // TODO: Get user_id from auth context
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setFile(e.target.files[0]);
-        }
-    };
-
-    const getSourceType = (): SourceType | null => {
-        if (activeTab === "youtube" && youtubeUrl) return "youtube";
-        if (activeTab === "text" && textContent) return "text";
-        if (activeTab === "upload" && file) {
-            const ext = file.name.split(".").pop()?.toLowerCase();
-            if (["mp3", "wav", "ogg", "m4a"].includes(ext || ""))
-                return "audio";
-            if (ext === "pptx") return "pptx";
-        }
-        return null;
-    };
-
     const handleStartTranscript = async () => {
-        const sourceType = getSourceType();
-        if (!sourceType || (sourceType !== "text" && sourceType !== "youtube")) {
-            alert("Project generation currently supports text and YouTube sources");
-            return;
-        }
-        const content = sourceType === "youtube" ? youtubeUrl : textContent;
-        if (!content) return;
+        const trimmedDescription = description.trim();
+        if (!trimmedDescription) return;
 
         try {
             await workflow.startTranscript({
-                source_type: sourceType,
-                content,
+                description: trimmedDescription,
                 background_video_id: "minecraft",
             });
         } catch (error) {
@@ -105,10 +70,7 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
 
     const handleReset = () => {
         workflow.reset();
-        setYoutubeUrl("");
-        setTextContent("");
-        setFile(null);
-        setActiveTab("youtube");
+        setDescription("");
     };
 
     const handleClose = () => {
@@ -124,89 +86,19 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
     };
 
     const renderSourceInput = () => (
-        <div className="space-y-2">
-            <Label>Source</Label>
-            <Tabs
-                value={activeTab}
-                onValueChange={(v) => setActiveTab(v as typeof activeTab)}
-                className="w-full"
-            >
-                <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="youtube">
-                        <LinkIcon className="h-4 w-4 mr-2" />
-                        YouTube
-                    </TabsTrigger>
-                    <TabsTrigger value="text">
-                        <FileText className="h-4 w-4 mr-2" />
-                        Text
-                    </TabsTrigger>
-                    <TabsTrigger value="upload">
-                        <Upload className="h-4 w-4 mr-2" />
-                        Upload
-                    </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="youtube" className="space-y-3 mt-4">
-                    <Input
-                        placeholder="https://youtube.com/watch?v=..."
-                        value={youtubeUrl}
-                        onChange={(e) => setYoutubeUrl(e.target.value)}
-                        disabled={workflow.isLoading}
-                    />
-                    <p className="text-sm text-muted-foreground">
-                        Paste a YouTube URL to generate a video
-                    </p>
-                </TabsContent>
-
-                <TabsContent value="text" className="space-y-3 mt-4">
-                    <Textarea
-                        placeholder="Enter your text content here..."
-                        value={textContent}
-                        onChange={(e) => setTextContent(e.target.value)}
-                        className="min-h-[200px] resize-none"
-                        disabled={workflow.isLoading}
-                    />
-                    <p className="text-sm text-muted-foreground">
-                        Paste or type text to generate a video
-                    </p>
-                </TabsContent>
-
-                <TabsContent value="upload" className="space-y-3 mt-4">
-                    <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer">
-                        <input
-                            type="file"
-                            id="file-upload"
-                            onChange={handleFileChange}
-                            accept=".pptx,.mp3,.wav,.ogg,.m4a"
-                            className="hidden"
-                            disabled={workflow.isLoading}
-                        />
-                        <label htmlFor="file-upload" className="cursor-pointer">
-                            <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                            {file ? (
-                                <div>
-                                    <p className="text-foreground font-medium">
-                                        {file.name}
-                                    </p>
-                                    <p className="text-sm text-muted-foreground mt-1">
-                                        {(file.size / 1024 / 1024).toFixed(2)}{" "}
-                                        MB
-                                    </p>
-                                </div>
-                            ) : (
-                                <div>
-                                    <p className="text-foreground font-medium">
-                                        Click to upload
-                                    </p>
-                                    <p className="text-sm text-muted-foreground mt-1">
-                                        Audio (.mp3, .wav) or PowerPoint (.pptx)
-                                    </p>
-                                </div>
-                            )}
-                        </label>
-                    </div>
-                </TabsContent>
-            </Tabs>
+        <div className="space-y-3">
+            <Label htmlFor="modal-project-description">Lesson description</Label>
+            <Textarea
+                id="modal-project-description"
+                placeholder="Describe the topic, learning goals, tone, and facts the dialogue should cover..."
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                className="min-h-[220px] resize-none"
+                disabled={workflow.isLoading}
+            />
+            <p className="text-sm text-muted-foreground">
+                Gemini will turn this description into an editable dialogue.
+            </p>
         </div>
     );
 
@@ -438,10 +330,10 @@ export function CreateVideoModal({ isOpen, onClose }: CreateVideoModalProps) {
                         <Button
                             onClick={handleStartTranscript}
                             className="flex-1"
-                            disabled={!getSourceType()}
+                            disabled={!description.trim()}
                         >
                             <Sparkles className="h-4 w-4 mr-2" />
-                            Generate Transcript
+                            Generate Dialogue
                         </Button>
                     </>
                 );

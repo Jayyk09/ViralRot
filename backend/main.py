@@ -88,8 +88,7 @@ class VideoGenerationRequest(BaseModel):
 
 
 class EditorProjectGenerateRequest(BaseModel):
-    source_type: Literal["text", "youtube"] = "text"
-    content: str
+    description: str
     background_video_id: str
 
 
@@ -399,10 +398,10 @@ async def create_editor_project(
     user_id: int = Depends(get_current_user_id),
 ):
     """Generate and persist a project from user-provided source material."""
-    content = payload.content.strip()
+    description = payload.description.strip()
     background_video_id = payload.background_video_id.strip()
-    if not content:
-        raise HTTPException(status_code=422, detail="Content cannot be blank")
+    if not description:
+        raise HTTPException(status_code=422, detail="Description cannot be blank")
     if not background_video_id:
         raise HTTPException(status_code=422, detail="Background video is required")
 
@@ -411,8 +410,7 @@ async def create_editor_project(
         _process_transcript_job,
         job_id=job_id,
         user_id=user_id,
-        transcript_source=content,
-        transcript_type=payload.source_type,
+        description=description,
         background_video_id=background_video_id,
     )
     return {
@@ -587,8 +585,7 @@ async def update_editor_line(
 async def _process_transcript_job(
     job_id: str,
     user_id: int,
-    transcript_source: str,
-    transcript_type: str,
+    description: str,
     background_video_id: str,
 ):
     """Background task for transcript generation with progress updates."""
@@ -612,8 +609,8 @@ async def _process_transcript_job(
         # Call the transcript extraction - returns SingleDialogue now
         dialogue = await _run_blocking(
             extract_transcripts,
-            transcript_source,
-            transcript_type,
+            description,
+            "text",
         )
         
         if not dialogue or not dialogue.dialogue:

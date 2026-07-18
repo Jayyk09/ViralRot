@@ -30,8 +30,7 @@ def test_create_editor_project_starts_backend_generation(client):
         response = client.post(
             "/editor/projects",
             json={
-                "source_type": "text",
-                "content": "How photosynthesis works",
+                "description": "How photosynthesis works",
                 "background_video_id": "minecraft",
             },
         )
@@ -41,8 +40,7 @@ def test_create_editor_project_starts_backend_generation(client):
     process.assert_awaited_once_with(
         job_id="job-1",
         user_id=1,
-        transcript_source="How photosynthesis works",
-        transcript_type="text",
+        description="How photosynthesis works",
         background_video_id="minecraft",
     )
 
@@ -114,8 +112,7 @@ def test_create_editor_project_rejects_blank_content(client):
     response = client.post(
         "/editor/projects",
         json={
-            "source_type": "text",
-            "content": "   ",
+            "description": "   ",
             "background_video_id": "minecraft",
         },
     )
@@ -145,8 +142,7 @@ def test_gemini_result_is_persisted_before_job_completes():
             _process_transcript_job(
                 job_id="job-1",
                 user_id=1,
-                transcript_source="source text",
-                transcript_type="text",
+                description="source text",
                 background_video_id="minecraft",
             )
         )

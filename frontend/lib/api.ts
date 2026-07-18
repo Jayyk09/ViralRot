@@ -1,6 +1,5 @@
 import {
 	API_BASE_URL,
-	SourceType,
 	TranscriptRequest,
 	VideoRequest,
 	AudioRequest,
@@ -77,8 +76,7 @@ export async function generateTranscript(
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
-			source_type: request.source_type,
-			content: request.content,
+			description: request.description,
 			background_video_id: request.background_video_id,
 		}),
 		credentials: "include",
@@ -357,21 +355,6 @@ export async function fetchBackgroundURLs(): Promise<BackgroundUrls> {
 }
 
 // ============ Utility Functions ============
-export function detectSourceType(
-	youtubeUrl?: string,
-	textContent?: string,
-	file?: File,
-): SourceType | null {
-	if (youtubeUrl) return "youtube";
-	if (textContent) return "text";
-	if (file) {
-		const ext = file.name.split(".").pop()?.toLowerCase();
-		if (["mp3", "wav", "ogg", "m4a"].includes(ext || "")) return "audio";
-		if (ext === "pptx") return "pptx";
-	}
-	return null;
-}
-
 export function getStageDescription(stage?: string): string {
 	const descriptions: Record<string, string> = {
 		extracting_content: "Extracting content from source...",

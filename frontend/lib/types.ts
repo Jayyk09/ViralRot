@@ -2,9 +2,6 @@
 export const API_BASE_URL = "http://localhost:8000";
 export const WS_BASE_URL = "ws://localhost:8000";
 
-// ============ Source Types ============
-export type SourceType = "youtube" | "audio" | "text" | "pptx";
-
 // ============ Job Types ============
 export type JobType = "transcript_generation" | "video_generation" | "audio_generation";
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
@@ -18,9 +15,8 @@ export type AudioStage = "tts_generation" | "concatenation" | "uploading";
 
 // ============ Request Types ============
 export interface TranscriptRequest {
-    source_type: "youtube" | "text";
     user_id: number;
-    content: string;
+    description: string;
     background_video_id: string;
 }
 
