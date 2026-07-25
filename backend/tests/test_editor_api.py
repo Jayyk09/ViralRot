@@ -120,6 +120,71 @@ def test_create_editor_project_rejects_blank_content(client):
     assert response.status_code == 422
 
 
+def test_project_response_restores_active_composition_timing():
+    from main import _editor_project_response
+
+    project = {
+        "id": PROJECT_ID,
+        "active_composition_id": UUID("44444444-4444-4444-8444-444444444444"),
+        "active_composition_storage_key": "composition.mp3",
+        "active_composition_duration_ms": 1000,
+        "active_composition_line_manifest": [{
+            "line_id": str(LINE_ID),
+            "start_ms": 0,
+            "end_ms": 1000,
+            "caption": "Hello",
+            "speaker": "PETER",
+            "emotion": "neutral",
+        }],
+        "dialogue": [{
+            "id": LINE_ID,
+            "active_segment_word_timings": [
+                {"word": "Hello", "start": 0.0, "end": 0.8}
+            ],
+        }],
+        "exports": [],
+    }
+    with patch("main.get_storage_backend") as storage_factory:
+        storage_factory.return_value.generate_url.return_value = "https://audio.example/test.mp3"
+        response = _editor_project_response(project)
+
+    assert response["active_composition"]["audio_url"].startswith("https://")
+    assert response["active_composition"]["line_timings"][0]["duration"] == 1.0
+    assert response["active_composition"]["word_timestamps"][0]["word"] == "Hello"
+
+
+def test_audio_generation_uses_persisted_project(client):
+    project = {"id": PROJECT_ID, "title": "Project", "dialogue": []}
+    with (
+        patch("main.editor_repository.get_project", return_value=project),
+        patch("main.ProgressService.create_audio_job", return_value="audio-job"),
+        patch("main._process_project_audio_job", new_callable=AsyncMock) as process,
+    ):
+        response = client.post(f"/editor/projects/{PROJECT_ID}/audio")
+
+    assert response.status_code == 202
+    assert response.json()["job_id"] == "audio-job"
+    process.assert_awaited_once_with(job_id="audio-job", project_id=PROJECT_ID, user_id=1)
+
+
+def test_video_generation_rejects_missing_composition(client):
+    project = {
+        "id": PROJECT_ID,
+        "title": "Project",
+        "dialogue": [{"id": LINE_ID}],
+        "background_video_id": "minecraft",
+        "active_composition_id": None,
+    }
+    with patch("main.editor_repository.get_project", return_value=project):
+        response = client.post(
+            f"/editor/projects/{PROJECT_ID}/video",
+            json={"karaoke_captions": True},
+        )
+
+    assert response.status_code == 409
+    assert "Regenerate narration" in response.json()["detail"]
+
+
 def test_gemini_result_is_persisted_before_job_completes():
     from frontend_pipeline.script_generation.models import DialogueLine, SingleDialogue
     from main import _process_transcript_job

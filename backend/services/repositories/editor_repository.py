@@ -1,5 +1,6 @@
 """Persistence operations for editor projects and dialogue lines."""
 
+import json
 from typing import Dict, List, NotRequired, Optional, TypedDict
 from uuid import UUID, uuid4
 
@@ -314,6 +315,8 @@ class EditorRepository:
                    project.background_video_id, project.revision,
                    project.active_composition_id,
                    composition.storage_key AS active_composition_storage_key,
+                   composition.duration_ms AS active_composition_duration_ms,
+                   composition.line_manifest AS active_composition_line_manifest,
                    project.created_at, project.updated_at
             FROM editor_projects AS project
             LEFT JOIN audio_compositions AS composition
@@ -334,7 +337,9 @@ class EditorRepository:
                    line.emotion, line.revision, line.audio_status,
                    line.audio_error, line.active_segment_id,
                    line.created_at, line.updated_at,
-                   segment.storage_key AS active_segment_storage_key
+                   segment.storage_key AS active_segment_storage_key,
+                   segment.duration_ms AS active_segment_duration_ms,
+                   segment.word_timings AS active_segment_word_timings
             FROM dialogue_lines AS line
             LEFT JOIN audio_segments AS segment
               ON segment.id = line.active_segment_id
@@ -345,7 +350,182 @@ class EditorRepository:
         )
         result = dict(project)
         result["dialogue"] = [dict(row) for row in cur.fetchall()]
+        cur.execute(
+            """
+            SELECT id, s3_key AS storage_key, video_title AS title, created_at
+            FROM videos
+            WHERE editor_project_id = %s AND user_id = %s
+            ORDER BY created_at DESC
+            """,
+            (project_id, user_id),
+        )
+        result["exports"] = [dict(row) for row in cur.fetchall()]
         return result
+
+    def prepare_audio_generation(
+        self, project_id: UUID, user_id: int
+    ) -> Dict[str, object]:
+        """Claim every missing/stale/failed line and return the project snapshot."""
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    project = self._get_project(cur, project_id, user_id)
+                    lines = project["dialogue"]
+                    if not lines:
+                        raise EditorInvalidOrderError("Project has no dialogue lines")
+                    if any(line["audio_status"] == "generating" for line in lines):
+                        raise EditorLineGeneratingError("Narration generation is already running")
+                    line_ids = [
+                        line["id"]
+                        for line in lines
+                        if line["audio_status"] in {"missing", "stale", "failed"}
+                        or not line["active_segment_id"]
+                    ]
+                    if line_ids:
+                        cur.execute(
+                            """
+                            UPDATE dialogue_lines
+                            SET audio_status = 'generating', audio_error = NULL, updated_at = NOW()
+                            WHERE project_id = %s AND id = ANY(%s)
+                            """,
+                            (project_id, line_ids),
+                        )
+                    project["lines_to_generate"] = [
+                        line for line in lines if line["id"] in set(line_ids)
+                    ]
+                    return project
+        finally:
+            conn.close()
+
+    def complete_audio_segment(
+        self,
+        project_id: UUID,
+        line_id: UUID,
+        user_id: int,
+        expected_revision: int,
+        segment_id: UUID,
+        storage_key: str,
+        duration_ms: int,
+        voice_id: str,
+        word_timings: List[Dict[str, object]],
+    ) -> None:
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO audio_segments
+                            (id, line_id, storage_key, duration_ms, voice_id, word_timings)
+                        VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                        """,
+                        (segment_id, line_id, storage_key, duration_ms, voice_id, json.dumps(word_timings)),
+                    )
+                    cur.execute(
+                        """
+                        UPDATE dialogue_lines AS line
+                        SET active_segment_id = %s, audio_status = 'ready',
+                            audio_error = NULL, updated_at = NOW()
+                        FROM editor_projects AS project
+                        WHERE line.id = %s AND line.project_id = %s
+                          AND project.id = line.project_id AND project.user_id = %s
+                          AND line.revision = %s AND line.audio_status = 'generating'
+                        """,
+                        (segment_id, line_id, project_id, user_id, expected_revision),
+                    )
+                    if cur.rowcount != 1:
+                        raise EditorRevisionConflictError(
+                            "Dialogue changed while narration was generating"
+                        )
+        finally:
+            conn.close()
+
+    def fail_audio_segment(
+        self, project_id: UUID, line_id: UUID, user_id: int, error: str
+    ) -> None:
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE dialogue_lines AS line
+                        SET audio_status = 'failed', audio_error = %s, updated_at = NOW()
+                        FROM editor_projects AS project
+                        WHERE line.id = %s AND line.project_id = %s
+                          AND project.id = line.project_id AND project.user_id = %s
+                        """,
+                        (error[:2000], line_id, project_id, user_id),
+                    )
+        finally:
+            conn.close()
+
+    def get_composition_inputs(
+        self, project_id: UUID, user_id: int
+    ) -> List[Dict[str, object]]:
+        conn = get_db_conn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT line.id AS line_id, line.position, line.caption,
+                           line.speaker, line.emotion, line.audio_status,
+                           segment.id AS segment_id, segment.storage_key,
+                           segment.duration_ms, segment.word_timings
+                    FROM dialogue_lines AS line
+                    JOIN editor_projects AS project ON project.id = line.project_id
+                    LEFT JOIN audio_segments AS segment ON segment.id = line.active_segment_id
+                    WHERE line.project_id = %s AND project.user_id = %s
+                    ORDER BY line.position
+                    """,
+                    (project_id, user_id),
+                )
+                rows = [dict(row) for row in cur.fetchall()]
+                if not rows or any(
+                    row["audio_status"] != "ready" or not row["segment_id"]
+                    for row in rows
+                ):
+                    raise EditorRevisionConflictError(
+                        "Every dialogue line needs ready narration"
+                    )
+                return rows
+        finally:
+            conn.close()
+
+    def activate_composition(
+        self,
+        project_id: UUID,
+        user_id: int,
+        composition_id: UUID,
+        storage_key: str,
+        duration_ms: int,
+        line_manifest: List[Dict[str, object]],
+    ) -> None:
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO audio_compositions
+                            (id, project_id, storage_key, duration_ms, line_manifest)
+                        VALUES (%s, %s, %s, %s, %s::jsonb)
+                        """,
+                        (composition_id, project_id, storage_key, duration_ms, json.dumps(line_manifest)),
+                    )
+                    cur.execute(
+                        """
+                        UPDATE editor_projects
+                        SET active_composition_id = %s, updated_at = NOW()
+                        WHERE id = %s AND user_id = %s
+                        """,
+                        (composition_id, project_id, user_id),
+                    )
+                    if cur.rowcount != 1:
+                        raise EditorProjectNotFoundError("Editor project not found")
+        finally:
+            conn.close()
 
     def _lock_project(
         self,

@@ -136,4 +136,30 @@ CREATE INDEX IF NOT EXISTS idx_audio_segments_line_created
 CREATE INDEX IF NOT EXISTS idx_audio_compositions_project_created
     ON audio_compositions(project_id, created_at DESC);
 
+-- Every rendered video is an output of one persistent editor project.
+ALTER TABLE videos
+    ADD COLUMN IF NOT EXISTS editor_project_id UUID;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_videos_editor_project'
+          AND conrelid = 'videos'::regclass
+    ) THEN
+        ALTER TABLE videos
+            ADD CONSTRAINT fk_videos_editor_project
+            FOREIGN KEY (editor_project_id)
+            REFERENCES editor_projects(id)
+            ON DELETE CASCADE;
+    END IF;
+END
+$$;
+
+ALTER TABLE videos
+    ALTER COLUMN editor_project_id SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_videos_editor_project_created
+    ON videos(editor_project_id, created_at DESC);
+
 COMMIT;
