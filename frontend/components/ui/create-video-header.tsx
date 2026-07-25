@@ -2,122 +2,109 @@
 
 import { BackgroundUrl, BackgroundUrls } from "@/lib/api";
 import {
-        DropdownMenu,
-        DropdownMenuContent,
-        DropdownMenuItem,
-        DropdownMenuTrigger,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { FolderOpen, Settings, Play, Download, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Download, Film, Loader2, Mic, Save, Video } from "lucide-react";
 
-type EditorHeaderProps = {
-        videoOptions: BackgroundUrls;
-        selectedVideo: BackgroundUrl;
-        onVideoChange: (v: BackgroundUrl) => void;
-        /** Export the current (audio + background, no overlays yet) video - Phase 1 */
-        onExport?: () => void;
-        /** Whether export or audio generation is in progress (disables the button) */
-        isExportDisabled?: boolean;
-        isExporting?: boolean;
-        /** URL of the exported video, once ready */
-        exportUrl?: string | null;
-};
-
-function filenameFromUrl(url: string): string {
-        return url.split("/").pop() ?? url;
+interface EditorHeaderProps {
+    title: string;
+    onTitleChange: (title: string) => void;
+    videoOptions: BackgroundUrls;
+    selectedVideo: BackgroundUrl;
+    onVideoChange: (video: BackgroundUrl) => void;
+    onGenerateNarration: () => void;
+    onGenerateVideo: () => void;
+    narrationReady: boolean;
+    isGeneratingNarration: boolean;
+    isGeneratingVideo: boolean;
+    saveStatus: "saved" | "saving" | "conflict";
+    actionsDisabled?: boolean;
+    exportUrl?: string | null;
 }
 
 export function EditorHeader({
-        videoOptions,
-        selectedVideo,
-        onVideoChange,
-        onExport,
-        isExportDisabled,
-        isExporting,
-        exportUrl,
+    title,
+    onTitleChange,
+    videoOptions,
+    selectedVideo,
+    onVideoChange,
+    onGenerateNarration,
+    onGenerateVideo,
+    narrationReady,
+    isGeneratingNarration,
+    isGeneratingVideo,
+    saveStatus,
+    actionsDisabled,
+    exportUrl,
 }: EditorHeaderProps) {
-        return (
-                <div className="panel-edge flex items-center gap-3 px-4 h-11 border-b border-border/60 bg-card shrink-0">
-                        {/* File selector */}
-                        <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                        <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-7 gap-1.5 text-xs font-mono border-border/60 hover:border-primary/50"
-                                        >
-                                                <FolderOpen className="w-3.5 h-3.5 text-primary" />
-                                                <span className="text-muted-foreground">FILE:</span>
-                                                <span className="text-foreground max-w-40 truncate">
-                                                        {selectedVideo
-                                                                ? selectedVideo.id
-                                                                : "No file selected"}
-                                                </span>
-                                        </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="start" className="font-mono text-xs">
-                                        {videoOptions.videos.map((v) => (
-                                                <DropdownMenuItem
-                                                        key={v.id}
-                                                        onSelect={() => onVideoChange(v)}
-                                                        className={v.id === selectedVideo?.id ? "bg-accent" : ""}
-                                                >
-                                                        {v.id}
-                                                </DropdownMenuItem>
-                                        ))}
-                                </DropdownMenuContent>
-                        </DropdownMenu>
+    return (
+        <div className="panel-edge flex h-12 shrink-0 items-center gap-3 border-b border-border/60 bg-card px-4">
+            <div className="min-w-0">
+                <Input
+                    defaultValue={title}
+                    onBlur={(event) => {
+                        const next = event.target.value.trim();
+                        if (next && next !== title) onTitleChange(next);
+                    }}
+                    className="h-6 w-56 border-0 bg-transparent px-0 font-[family-name:var(--font-heading)] text-sm font-semibold shadow-none focus-visible:ring-0"
+                    aria-label="Project title"
+                />
+                <p className="flex items-center gap-1 font-mono text-[9px] uppercase text-muted-foreground">
+                    <Save className="h-2.5 w-2.5" /> {saveStatus}
+                </p>
+            </div>
 
-                        <div className="flex-1" />
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="ml-3 h-7 gap-1.5 font-mono text-xs">
+                        <Film className="h-3.5 w-3.5 text-primary" />
+                        {selectedVideo.id}
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                    {videoOptions.videos.map((video) => (
+                        <DropdownMenuItem key={video.id} onSelect={() => onVideoChange(video)}>
+                            {video.id}
+                        </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+            </DropdownMenu>
 
-                        <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                        >
-                                <Settings className="w-3.5 h-3.5" />
-                                Settings
-                        </Button>
+            <div className="flex-1" />
 
-                        <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1.5 text-xs text-primary hover:text-primary/80 hover:bg-primary/10"
-                        >
-                                <Play className="w-3.5 h-3.5 fill-current" />
-                                Preview All
-                        </Button>
+            <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={onGenerateNarration}
+                disabled={actionsDisabled || isGeneratingNarration || isGeneratingVideo}
+            >
+                {isGeneratingNarration ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Mic className="mr-1.5 h-3.5 w-3.5" />}
+                {narrationReady ? "Regenerate narration" : "Generate narration"}
+            </Button>
 
-                        {onExport && (
-                                exportUrl ? (
-                                        <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-7 gap-1.5 text-xs border-success/40 text-success"
-                                                asChild
-                                        >
-                                                <a href={exportUrl} target="_blank" rel="noopener noreferrer">
-                                                        <Download className="w-3.5 h-3.5" />
-                                                        Download
-                                                </a>
-                                        </Button>
-                                ) : (
-                                        <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-7 gap-1.5 text-xs"
-                                                onClick={onExport}
-                                                disabled={isExportDisabled || isExporting}
-                                        >
-                                                {isExporting ? (
-                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                ) : (
-                                                        <Download className="w-3.5 h-3.5" />
-                                                )}
-                                                {isExporting ? "Exporting..." : "Export"}
-                                        </Button>
-                                )
-                        )}
-                </div>
-        );
+            <Button
+                size="sm"
+                className="h-8 text-xs"
+                onClick={onGenerateVideo}
+                disabled={actionsDisabled || !narrationReady || isGeneratingNarration || isGeneratingVideo}
+            >
+                {isGeneratingVideo ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Video className="mr-1.5 h-3.5 w-3.5" />}
+                {isGeneratingVideo ? "Rendering…" : "Generate video"}
+            </Button>
+
+            {exportUrl && (
+                <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+                    <a href={exportUrl} target="_blank" rel="noopener noreferrer">
+                        <Download className="mr-1.5 h-3.5 w-3.5" /> Download
+                    </a>
+                </Button>
+            )}
+        </div>
+    );
 }

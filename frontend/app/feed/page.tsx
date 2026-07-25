@@ -2,12 +2,11 @@
 
 import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Video as VideoIcon, Plus, Loader2 } from "lucide-react";
 import { VideoPlayer, VideoPlayerRef } from "@/components/video-player";
 import { SubjectFilter } from "@/components/subject-filter";
-import { CreateVideoModal } from "@/components/create-video-modal";
 import { TopNav } from "@/components/TopNavBar";
 import {
     fetchVideosPage,
@@ -24,10 +23,10 @@ interface VideoWithMetadata extends VideoResponse {
 
 function FeedContent() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const collectionParam = searchParams.get("collection");
 
     const [selectedSubject, setSelectedSubject] = useState<string>("all");
-    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [selectedCollectionId, setSelectedCollectionId] = useState<
         number | null
     >(collectionParam ? parseInt(collectionParam, 10) : null);
@@ -216,7 +215,7 @@ function FeedContent() {
         <div className="h-screen bg-background overflow-hidden flex flex-col">
             <TopNav
                 variant="app"
-                onCreateClick={() => setIsCreateModalOpen(true)}
+                onCreateClick={() => router.push("/create")}
             />
 
             {/* Collection/Subject Filter Bar */}
@@ -311,7 +310,7 @@ function FeedContent() {
                             <p className="text-muted-foreground mb-6">
                                 Create your first video to get started.
                             </p>
-                            <Button onClick={() => setIsCreateModalOpen(true)}>
+                            <Button onClick={() => router.push("/create")}>
                                 <Plus className="h-4 w-4 mr-2" />
                                 Create Video
                             </Button>
@@ -319,12 +318,6 @@ function FeedContent() {
                     </div>
                 )}
             </main>
-
-            {/* Create Video Modal */}
-            <CreateVideoModal
-                isOpen={isCreateModalOpen}
-                onClose={() => setIsCreateModalOpen(false)}
-            />
         </div>
     );
 }

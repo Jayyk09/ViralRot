@@ -1,221 +1,270 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { fetchBackgroundURLs, BackgroundUrl, BackgroundUrls } from "@/lib/api";
-import { TranscriptResult, ImageConfig, AudioResult } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Mic } from "lucide-react";
+import {
+    addEditorLine,
+    BackgroundUrl,
+    BackgroundUrls,
+    deleteEditorLine,
+    fetchBackgroundURLs,
+    generateProjectAudio,
+    generateVideo,
+    reorderEditorLines,
+    updateEditorLine,
+    updateEditorProject,
+} from "@/lib/api";
+import { EditorLineRecord, EditorProject, isVideoResult } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
-import { useImageEditor } from "@/hooks/use-image-editor";
-import { useAudioGeneration, useExportVideo } from "@/hooks/use-audio-generation";
+import { useJobProgress } from "@/hooks/use-project-generation";
 import { EditorHeader } from "@/components/ui/create-video-header";
+import { Button } from "@/components/ui/button";
 import { CanvasPreview } from "./CanvasPreview";
 import { DialogueList } from "./DialogueList";
 import { EditorFooter } from "./EditorFooter";
-import { Loader2 } from "lucide-react";
 
 interface EditorProps {
-    transcript: TranscriptResult;
-    /** Pre-loaded audio result — skips TTS job entirely (dev fixture mode). */
-    initialAudio?: AudioResult;
+    project: EditorProject;
+    onProjectChange: (project: EditorProject) => void;
+    onConflict: () => Promise<void>;
 }
 
-interface PlacingImage {
-    file: File;
-    previewUrl: string;
-    lineIdx: number;
-}
-
-export function Editor({ transcript, initialAudio }: EditorProps) {
-    const [videoOptions, setVideoOptions] = useState<BackgroundUrls | null>(null);
-    const [selectedVideo, setSelectedVideo] = useState<BackgroundUrl | null>(null);
+export function Editor({ project, onProjectChange, onConflict }: EditorProps) {
+    const [videoOptions, setVideoOptions] = useState<BackgroundUrls>({ videos: [] });
     const [selectedLineIdx, setSelectedLineIdx] = useState(0);
-    const [captionMode, setCaptionMode] = useState<CaptionMode>("box");
-    const [placingImage, setPlacingImage] = useState<PlacingImage | null>(null);
+    const [captionMode] = useState<CaptionMode>("box");
+    const [audioJobId, setAudioJobId] = useState<string | null>(null);
+    const [videoJobId, setVideoJobId] = useState<string | null>(null);
+    const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "conflict">("saved");
+    const saveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+    const projectRef = useRef(project);
+    projectRef.current = project;
 
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const pendingLineIdxRef = useRef<number>(0);
-    const audioGenStartedRef = useRef(false);
-
-    const editor = useImageEditor(transcript);
-    const lines = editor.state.transcript.dialogue?.dialogue ?? [];
-
-    const audioGen = useAudioGeneration();
-    const exportGen = useExportVideo();
+    const audioJob = useJobProgress(audioJobId, { userId: 1 });
+    const videoJob = useJobProgress(videoJobId, { userId: 1 });
 
     useEffect(() => {
-        fetchBackgroundURLs()
-            .then((res: BackgroundUrls) => {
-                setVideoOptions(res);
-                if (res.videos.length > 0) setSelectedVideo(res.videos[0] ?? null);
-            })
-            .catch(console.error);
+        fetchBackgroundURLs().then(setVideoOptions).catch(console.error);
     }, []);
 
-    // Finalize narration audio exactly once. If initialAudio is provided (dev
-    // fixture mode) we skip the TTS job entirely and use it as-is.
+    useEffect(() => () => {
+        saveTimers.current.forEach(clearTimeout);
+    }, []);
+
     useEffect(() => {
-        if (initialAudio) {
-            audioGen.setFixture(initialAudio);
-            return;
-        }
-        if (audioGenStartedRef.current) return;
-        if (!selectedVideo || lines.length === 0) return;
+        if (audioJob.isComplete) void onConflict().then(() => setAudioJobId(null));
+    }, [audioJob.isComplete, onConflict]);
 
-        audioGenStartedRef.current = true;
-        audioGen
-            .generate({
-                transcript: editor.getTranscriptJson(),
-                video: selectedVideo.id,
-            })
-            .catch(console.error);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedVideo, lines.length]);
+    const selectedVideo = useMemo<BackgroundUrl | null>(() => {
+        return videoOptions.videos.find((video) => video.id === project.background_video_id)
+            ?? videoOptions.videos[0]
+            ?? null;
+    }, [project.background_video_id, videoOptions.videos]);
 
-    const handleExport = useCallback(() => {
-        if (!audioGen.audio || !selectedVideo) return;
-        exportGen
-            .start({
-                video: selectedVideo.id,
-                audio_url: audioGen.audio.audio_url,
-                line_timings: JSON.stringify(audioGen.audio.line_timings),
-                karaoke_captions: captionMode === "karaoke",
-            })
-            .catch(console.error);
-    }, [audioGen.audio, selectedVideo, captionMode, exportGen]);
+    const narrationReady = Boolean(
+        project.active_composition
+        && project.dialogue.length
+        && project.dialogue.every((line) => line.audio_status === "ready"),
+    );
 
-    // Handle upload button click - opens native file picker
-    const handleUploadClick = useCallback((lineIdx: number) => {
-        pendingLineIdxRef.current = lineIdx;
-        fileInputRef.current?.click();
-    }, []);
-
-    // Handle file selection from native picker
-    const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !file.type.startsWith("image/")) return;
-
-        const lineIdx = pendingLineIdxRef.current;
-
-        // Create preview URL and enter placement mode
-        const previewUrl = URL.createObjectURL(file);
-        setPlacingImage({
-            file,
-            previewUrl,
-            lineIdx,
+    const handleLineChange = useCallback((lineId: string, updates: Partial<EditorLineRecord>) => {
+        const current = project.dialogue.find((line) => line.id === lineId);
+        if (!current) return;
+        onProjectChange({
+            ...project,
+            active_composition: null,
+            dialogue: project.dialogue.map((line) =>
+                line.id === lineId
+                    ? { ...line, ...updates, audio_status: "stale" }
+                    : line,
+            ),
         });
+        setSaveStatus("saving");
+        const existing = saveTimers.current.get(lineId);
+        if (existing) clearTimeout(existing);
+        saveTimers.current.set(lineId, setTimeout(async () => {
+            try {
+                const saved = await updateEditorLine(project.id, lineId, {
+                    caption: String(updates.caption ?? current.caption),
+                    speaker: String(updates.speaker ?? current.speaker),
+                    emotion: String(updates.emotion ?? current.emotion ?? "neutral"),
+                    expected_revision: current.revision,
+                });
+                const latest = projectRef.current;
+                onProjectChange({
+                    ...latest,
+                    active_composition: null,
+                    dialogue: latest.dialogue.map((line) => line.id === lineId ? saved : line),
+                });
+                setSaveStatus("saved");
+            } catch {
+                setSaveStatus("conflict");
+                await onConflict();
+            }
+        }, 500));
+    }, [onConflict, onProjectChange, project]);
 
-        // Reset input so the same file can be selected again
-        e.target.value = "";
-    }, []);
-
-    // Handle updating an existing image (position/size)
-    const handleUpdateImage = useCallback((lineIdx: number, imageIdx: number, updates: Partial<ImageConfig>) => {
-        editor.updateImageConfig(lineIdx, imageIdx, updates);
-    }, [editor]);
-
-    // Handle delete image
-    const handleDeleteImage = useCallback((lineIdx: number, imageIdx: number) => {
-        editor.removeImage(lineIdx, imageIdx);
-    }, [editor]);
-
-    // Handle new image placement (auto-called with default position)
-    const handleImagePlaced = useCallback((x: number, y: number, width: number) => {
-        if (!placingImage) return;
-        editor.addImageToLine(placingImage.lineIdx, placingImage.file, x, y, width);
-        // Don't revoke URL here - it's now managed by the editor's imagePreviewUrls
-        setPlacingImage(null);
-    }, [editor, placingImage]);
-
-    // Handle image placement cancelled (X button on new image)
-    const handleCancelPlacement = useCallback(() => {
-        if (placingImage?.previewUrl) {
-            URL.revokeObjectURL(placingImage.previewUrl);
+    const handleAddLine = async (position?: number) => {
+        setSaveStatus("saving");
+        try {
+            onProjectChange(await addEditorLine(project.id, {
+                caption: "New dialogue line",
+                speaker: "PETER",
+                emotion: "neutral",
+                position,
+                expected_project_revision: project.revision,
+            }));
+            setSaveStatus("saved");
+        } catch {
+            setSaveStatus("conflict");
+            await onConflict();
         }
-        setPlacingImage(null);
-    }, [placingImage]);
+    };
 
-    const audio = audioGen.audio;
+    const handleDeleteLine = async (lineId: string) => {
+        if (!window.confirm("Delete this dialogue line?")) return;
+        try {
+            onProjectChange(await deleteEditorLine(project.id, lineId, project.revision));
+            setSelectedLineIdx((index) => Math.max(0, Math.min(index, project.dialogue.length - 2)));
+        } catch {
+            setSaveStatus("conflict");
+            await onConflict();
+        }
+    };
+
+    const handleReorder = async (lineIds: string[]) => {
+        try {
+            onProjectChange(await reorderEditorLines(project.id, lineIds, project.revision));
+        } catch {
+            setSaveStatus("conflict");
+            await onConflict();
+        }
+    };
+
+    const saveProjectMetadata = async (title: string, backgroundVideoId: string | null) => {
+        setSaveStatus("saving");
+        try {
+            onProjectChange(await updateEditorProject(project.id, {
+                title,
+                background_video_id: backgroundVideoId,
+                expected_revision: project.revision,
+            }));
+            setSaveStatus("saved");
+        } catch {
+            setSaveStatus("conflict");
+            await onConflict();
+        }
+    };
+
+    const handleBackgroundChange = (video: BackgroundUrl) =>
+        saveProjectMetadata(project.title, video.id);
+
+    const generateNarration = async () => {
+        const job = await generateProjectAudio(project.id);
+        setAudioJobId(job.job_id);
+    };
+
+    const renderVideo = async () => {
+        const job = await generateVideo({
+            project_id: project.id,
+            user_id: 1,
+            karaoke_captions: captionMode === "karaoke",
+        });
+        setVideoJobId(job.job_id);
+    };
+
+    const generatedVideo = videoJob.isComplete && isVideoResult(videoJob.progress?.result)
+        ? videoJob.progress.result
+        : null;
+    const exportUrl = generatedVideo?.access_url ?? project.exports[0]?.access_url ?? null;
+    const audio = project.active_composition;
 
     return (
-        <div className="flex flex-col h-screen bg-background overflow-hidden">
-            {/* Hidden file input */}
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileSelected}
-                className="hidden"
-            />
-
-            {/* Top header bar */}
-            {videoOptions && selectedVideo && (
+        <div className="flex h-screen flex-col overflow-hidden bg-background">
+            {selectedVideo && (
                 <EditorHeader
+                    title={project.title}
+                    onTitleChange={(title) => saveProjectMetadata(title, project.background_video_id)}
                     videoOptions={videoOptions}
                     selectedVideo={selectedVideo}
-                    onVideoChange={setSelectedVideo}
-                    onExport={handleExport}
-                    isExportDisabled={!audio}
-                    isExporting={exportGen.isLoading}
-                    exportUrl={exportGen.video?.access_url ?? null}
+                    onVideoChange={handleBackgroundChange}
+                    onGenerateNarration={generateNarration}
+                    onGenerateVideo={renderVideo}
+                    narrationReady={narrationReady}
+                    isGeneratingNarration={audioJob.isLoading}
+                    isGeneratingVideo={videoJob.isLoading}
+                    saveStatus={saveStatus}
+                    actionsDisabled={saveStatus !== "saved"}
+                    exportUrl={exportUrl}
                 />
             )}
 
-            {!audio ? (
-                /* Narration must be fully generated before any preview/editing
-                   can happen - real timing only exists once this completes. */
-                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                    <p className="text-sm">
-                        {audioGen.error
-                            ? `Failed to generate audio: ${audioGen.error.message}`
-                            : "Generating narration audio..."}
-                    </p>
+            {(audioJob.error || videoJob.error) && (
+                <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-xs text-destructive">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {audioJob.error?.message ?? videoJob.error?.message}
                 </div>
-            ) : (
-                <>
-                    {/* Main content */}
-                    <div className="flex flex-1 min-h-0">
-                        {/* Left: Dialogue list */}
-                        <div className="border-r border-border/60 flex flex-col flex-1 min-h-0">
-                            <DialogueList
-                                lines={lines}
-                                selectedLineIdx={selectedLineIdx}
-                                setSelectedLineIdx={setSelectedLineIdx}
-                                captionMode={captionMode}
-                                onCaptionModeChange={setCaptionMode}
-                                onUploadLine={handleUploadClick}
-                            />
-                        </div>
+            )}
 
-                        {/* Right: Preview panel - Canvas-based rendering */}
-                        <div className="flex-1 min-h-0 relative overflow-hidden p-4 bg-muted/20 flex items-center justify-center">
-                            <CanvasPreview
-                                videoUrl={selectedVideo?.url ?? ""}
-                                lines={lines}
-                                audioUrl={audio.audio_url}
-                                lineTimings={audio.line_timings}
-                                wordTimestamps={audio.word_timestamps}
-                                selectedLineIdx={selectedLineIdx}
-                                onSegmentChange={setSelectedLineIdx}
-                                previewUrls={editor.state.imagePreviewUrls}
-                                captionMode={captionMode}
-                                placingImage={placingImage}
-                                onImagePlaced={handleImagePlaced}
-                                onCancelPlacement={handleCancelPlacement}
-                                onUpdateImage={handleUpdateImage}
-                                onDeleteImage={handleDeleteImage}
-                                className="h-full aspect-[9/16]"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Footer timeline */}
-                    <EditorFooter
-                        lines={lines}
+            <div className="flex min-h-0 flex-1">
+                <div className="flex min-h-0 flex-1 flex-col border-r border-border/60">
+                    <DialogueList
+                        lines={project.dialogue}
                         selectedLineIdx={selectedLineIdx}
                         onSelectLine={setSelectedLineIdx}
-                        lineTimings={audio.line_timings}
+                        onChangeLine={handleLineChange}
+                        onAddLine={handleAddLine}
+                        onDeleteLine={handleDeleteLine}
+                        onReorder={handleReorder}
+                        disabled={audioJob.isLoading || videoJob.isLoading}
                     />
-                </>
+                </div>
+
+                <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-muted/20 p-4">
+                    {audio && selectedVideo && narrationReady ? (
+                        <CanvasPreview
+                            videoUrl={selectedVideo.url}
+                            lines={project.dialogue}
+                            audioUrl={audio.audio_url}
+                            lineTimings={audio.line_timings}
+                            wordTimestamps={audio.word_timestamps}
+                            selectedLineIdx={selectedLineIdx}
+                            onSegmentChange={setSelectedLineIdx}
+                            previewUrls={new Map()}
+                            captionMode={captionMode}
+                            placingImage={null}
+                            onImagePlaced={() => undefined}
+                            onCancelPlacement={() => undefined}
+                            onUpdateImage={() => undefined}
+                            onDeleteImage={() => undefined}
+                            className="h-full aspect-[9/16]"
+                        />
+                    ) : (
+                        <div className="max-w-sm text-center">
+                            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-primary/30 bg-primary/10">
+                                <Mic className="h-6 w-6 text-primary" />
+                            </div>
+                            <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold">
+                                {project.active_composition ? "Narration is stale" : "Dialogue first, narration second"}
+                            </h2>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                                Review the dialogue, then generate narration to unlock the synchronized preview and video export.
+                            </p>
+                            <Button className="mt-5" onClick={generateNarration} disabled={audioJob.isLoading || saveStatus !== "saved"}>
+                                Generate narration
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {audio && narrationReady && (
+                <EditorFooter
+                    lines={project.dialogue}
+                    selectedLineIdx={selectedLineIdx}
+                    onSelectLine={setSelectedLineIdx}
+                    lineTimings={audio.line_timings}
+                />
             )}
         </div>
     );

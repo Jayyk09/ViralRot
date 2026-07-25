@@ -14,7 +14,7 @@ export type VideoStage =
 export type AudioStage = "tts_generation" | "concatenation" | "uploading";
 
 // ============ Request Types ============
-export interface TranscriptRequest {
+export interface ProjectCreateRequest {
     user_id: number;
     description: string;
     background_video_id: string;
@@ -26,15 +26,7 @@ export interface VideoRequest {
     karaoke_captions?: boolean;
 }
 
-// ============ Audio Generation Types (Phase 1: pipeline split) ============
-// generate-audio finalizes narration + real timing data with no rendering,
-// so the editor can load real timing before any overlay editing begins.
-
-export interface AudioRequest {
-    transcript: string; // JSON string of dialogue data (required)
-    user_id: number;
-    video: string; // Background video name
-}
+// ============ Persisted narration types ============
 
 /** Real per-line timing, driven by actual TTS audio duration (not duration_estimate) */
 export interface LineTiming {
@@ -64,16 +56,6 @@ export interface AudioResult {
     background_video_url: string;
 }
 
-// ============ Export Types (Phase 1: renders from already-generated audio) ============
-
-export interface ExportRequest {
-    user_id: number;
-    video: string;
-    audio_url: string;
-    line_timings: string; // JSON-stringified LineTiming[]
-    karaoke_captions?: boolean;
-}
-
 // ============ Job Response Types ============
 export interface JobCreatedResponse {
     job_id: string;
@@ -89,22 +71,6 @@ export interface JobCreatedResponse {
 
 // ============ Transcript Types ============
 export type Speaker = "PETER" | "STEWIE";
-
-// ============ Image Position Types || DEPRECATED ============
-// Small: 300px width, lower right half of screen
-export type SmallImagePosition = "right-high" | "right-mid" | "right-low";
-
-// Medium: 540px width (400px at bottom-right to avoid character overlap)
-export type MediumImagePosition = "top-left" | "top-right" | "bottom-right";
-
-// Large: 800px width, top center
-export type LargeImagePosition = "top-center";
-
-// All positions combined
-export type ImagePosition =
-    | SmallImagePosition
-    | MediumImagePosition
-    | LargeImagePosition;
 
 // =============== Image Configuration ====================
 export interface ImageConfig {
@@ -125,20 +91,8 @@ export interface DialogueLine {
     duration_estimate?: number;
 }
 
-// ============ NEW: Single Dialogue Format ============
-export interface SingleDialogue {
-    title: string;
-    dialogue: DialogueLine[];
-}
-
 export interface ProjectGenerationResult {
     project_id: string;
-}
-
-/** Hydrated editor data loaded after project generation completes. */
-export interface TranscriptResult {
-    project_id: string;
-    dialogue: Omit<SingleDialogue, "dialogue"> & { dialogue: EditorLineRecord[] };
 }
 
 export interface EditorLineRecord extends DialogueLine {
@@ -148,12 +102,28 @@ export interface EditorLineRecord extends DialogueLine {
     audio_status: "missing" | "generating" | "ready" | "stale" | "failed";
 }
 
+export interface PersistedComposition {
+    id: string;
+    audio_url: string;
+    duration_ms: number;
+    line_timings: LineTiming[];
+    word_timestamps: WordTimestamp[];
+}
+
 export interface EditorProject {
     id: string;
     title: string;
     background_video_id: string | null;
     revision: number;
     dialogue: EditorLineRecord[];
+    active_composition: PersistedComposition | null;
+    exports: Array<{
+        id: number;
+        title: string;
+        storage_key: string;
+        access_url: string;
+        created_at: string;
+    }>;
 }
 
 // ============ Video Result Types ============
@@ -226,21 +196,6 @@ export interface Video {
     collection_id: number;
     created_at: string;
 }
-
-// ============ Image Editor Types ============
-export interface ImageEditorState {
-    transcript: { dialogue: SingleDialogue }; // Matches API response format
-    imageFiles: Map<string, File>;
-    imagePreviewUrls: Map<string, string>;
-}
-
-export interface ValidationResult {
-    valid: boolean;
-    errors: string[];
-    warnings: string[];
-}
-
-export type ImageSize = "small" | "medium" | "large";
 
 // ============ Error Types ============
 export interface ApiError {
