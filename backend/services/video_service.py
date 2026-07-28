@@ -4,7 +4,7 @@ This module provides the main interface for video operations,
 orchestrating between storage backends and database repositories.
 """
 import re
-from uuid import uuid4
+from uuid import UUID, uuid4
 from pathlib import Path
 from typing import BinaryIO, Dict, List, Optional
 
@@ -53,6 +53,7 @@ class VideoService:
     def save_video(
         self,
         user_id: int,
+        editor_project_id: UUID,
         file_obj: BinaryIO,
         original_filename: str,
         title: Optional[str] = None,
@@ -88,13 +89,18 @@ class VideoService:
         self.storage.upload(file_obj, storage_key, metadata)
         
         # 3. Save to database
-        video_id = self.repository.insert_video(
-            user_id=user_id,
-            storage_key=storage_key,
-            title=title,
-            description=description,
-            collection_id=collection_id,
-        )
+        try:
+            video_id = self.repository.insert_video(
+                user_id=user_id,
+                editor_project_id=editor_project_id,
+                storage_key=storage_key,
+                title=title,
+                description=description,
+                collection_id=collection_id,
+            )
+        except Exception:
+            self.storage.delete(storage_key)
+            raise
         
         # 4. Generate access URL
         access_url = self.storage.generate_url(storage_key)

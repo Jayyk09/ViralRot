@@ -5,6 +5,7 @@ separating data access from business logic.
 """
 import re
 from typing import Dict, List, Optional
+from uuid import UUID
 
 from db import get_db_conn
 
@@ -20,6 +21,7 @@ class VideoRepository:
     def insert_video(
         self,
         user_id: int,
+        editor_project_id: UUID,
         storage_key: str,
         title: Optional[str] = None,
         description: Optional[str] = None,
@@ -44,11 +46,12 @@ class VideoRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO videos (user_id, s3_key, video_title, video_description, collection_id)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO videos
+                        (user_id, editor_project_id, s3_key, video_title, video_description, collection_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id;
                     """,
-                    (user_id, storage_key, title, description, collection_id),
+                    (user_id, editor_project_id, storage_key, title, description, collection_id),
                 )
                 row = cur.fetchone()
                 if row is None:

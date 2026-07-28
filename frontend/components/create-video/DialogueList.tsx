@@ -1,120 +1,129 @@
 "use client";
 
-import { DialogueLine } from "@/lib/types";
-import { CaptionMode } from "@/lib/canvas-renderer";
+import { useState } from "react";
+import { GripVertical, Plus, Trash2 } from "lucide-react";
+import { EditorLineRecord, Speaker } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { Upload, Type, Sparkles } from "lucide-react";
 
 interface DialogueListProps {
-        lines: DialogueLine[];
-        selectedLineIdx: number;
-        setSelectedLineIdx: (idx: number) => void;
-        onUploadLine?: (idx: number) => void;
-        captionMode?: CaptionMode;
-        onCaptionModeChange?: (mode: CaptionMode) => void;
+    lines: EditorLineRecord[];
+    selectedLineIdx: number;
+    onSelectLine: (index: number) => void;
+    onChangeLine: (lineId: string, updates: Partial<EditorLineRecord>) => void;
+    onAddLine: (position?: number) => void;
+    onDeleteLine: (lineId: string) => void;
+    onReorder: (lineIds: string[]) => void;
+    disabled?: boolean;
 }
 
-const SPEAKER_BADGE: Record<string, string> = {
-        PETER: "bg-chart-1/10 border-chart-1/40 text-chart-1",
-        STEWIE: "bg-chart-4/10 border-chart-4/40 text-chart-4",
-};
+const emotions = ["neutral", "angry", "excited", "confused"] as const;
 
 export function DialogueList({
-        lines,
-        selectedLineIdx,
-        setSelectedLineIdx,
-        onUploadLine,
-        captionMode = "box",
-        onCaptionModeChange,
+    lines,
+    selectedLineIdx,
+    onSelectLine,
+    onChangeLine,
+    onAddLine,
+    onDeleteLine,
+    onReorder,
+    disabled,
 }: DialogueListProps) {
+    const [draggedId, setDraggedId] = useState<string | null>(null);
 
+    const dropBefore = (targetId: string) => {
+        if (!draggedId || draggedId === targetId) return;
+        const ids = lines.map((line) => line.id).filter((id) => id !== draggedId);
+        ids.splice(ids.indexOf(targetId), 0, draggedId);
+        onReorder(ids);
+        setDraggedId(null);
+    };
 
-        return (
-                <div className="flex flex-col h-full min-h-0">
-                        <div className="px-3 py-2 border-b border-border/60 shrink-0 flex items-center justify-between">
-                                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                        Dialogue
+    return (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+            <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-3 py-2">
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Dialogue · {lines.length} lines
+                </span>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onAddLine()} disabled={disabled}>
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Add line
+                </Button>
+            </div>
+            <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+                <div className="space-y-2 p-2">
+                    {lines.map((line, index) => (
+                        <div
+                            key={line.id}
+                            draggable={!disabled}
+                            onDragStart={() => setDraggedId(line.id)}
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={() => dropBefore(line.id)}
+                            onClick={() => onSelectLine(index)}
+                            className={cn(
+                                "group rounded-lg border bg-card p-2 transition-colors",
+                                index === selectedLineIdx
+                                    ? "border-primary/50 ring-1 ring-primary/30"
+                                    : "border-border/50 hover:bg-accent/30",
+                            )}
+                        >
+                            <div className="mb-2 flex items-center gap-2">
+                                <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
+                                <span className="font-mono text-[10px] text-muted-foreground">#{index + 1}</span>
+                                <select
+                                    value={line.speaker}
+                                    onChange={(event) => onChangeLine(line.id, { speaker: event.target.value as Speaker })}
+                                    className="h-6 rounded border border-border bg-background px-1.5 text-[10px] font-bold"
+                                    disabled={disabled}
+                                >
+                                    <option value="PETER">PETER</option>
+                                    <option value="STEWIE">STEWIE</option>
+                                </select>
+                                <select
+                                    value={line.emotion ?? "neutral"}
+                                    onChange={(event) => onChangeLine(line.id, { emotion: event.target.value as EditorLineRecord["emotion"] })}
+                                    className="h-6 rounded border border-border bg-background px-1.5 text-[10px]"
+                                    disabled={disabled}
+                                >
+                                    {emotions.map((emotion) => <option key={emotion}>{emotion}</option>)}
+                                </select>
+                                <div className="flex-1" />
+                                <span className={cn(
+                                    "rounded px-1.5 py-0.5 font-mono text-[9px] uppercase",
+                                    line.audio_status === "ready" ? "bg-success/15 text-success" : "bg-warning/15 text-warning",
+                                )}>
+                                    {line.audio_status}
                                 </span>
-                                {onCaptionModeChange && (
-                                        <button
-                                                onClick={() => onCaptionModeChange(captionMode === "box" ? "karaoke" : "box")}
-                                                className={cn(
-                                                        "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors",
-                                                        captionMode === "karaoke"
-                                                                ? "bg-chart-3/20 text-chart-3 hover:bg-chart-3/30"
-                                                                : "bg-muted text-muted-foreground hover:bg-accent"
-                                                )}
-                                                title={captionMode === "karaoke" ? "Karaoke Mode" : "Box Mode"}
-                                        >
-                                                {captionMode === "karaoke" ? (
-                                                        <Sparkles className="w-3 h-3" />
-                                                ) : (
-                                                        <Type className="w-3 h-3" />
-                                                )}
-                                                {captionMode === "karaoke" ? "Karaoke" : "Box"}
-                                        </button>
-                                )}
+                                <button
+                                    type="button"
+                                    onClick={(event) => { event.stopPropagation(); onDeleteLine(line.id); }}
+                                    disabled={disabled}
+                                    className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                                    aria-label="Delete dialogue line"
+                                >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                            </div>
+                            <Textarea
+                                value={line.caption}
+                                onChange={(event) => onChangeLine(line.id, { caption: event.target.value })}
+                                onClick={(event) => event.stopPropagation()}
+                                className="min-h-16 resize-none border-0 bg-transparent p-1 text-sm shadow-none focus-visible:ring-1"
+                                disabled={disabled}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => onAddLine(index + 1)}
+                                className="mt-1 text-[10px] text-muted-foreground opacity-0 hover:text-primary group-hover:opacity-100"
+                                disabled={disabled}
+                            >
+                                + insert after
+                            </button>
                         </div>
-                        <ScrollArea className="flex-1">
-                                <div className="p-2 space-y-1.5">
-                                        {lines.map((line, idx) => (
-                                                <div
-                                                        key={idx}
-                                                        onClick={() => setSelectedLineIdx(idx)}
-                                                        className={cn(
-                                                                "w-full text-left rounded-lg border px-3 py-2.5 transition-all duration-150",
-                                                                "hover:bg-accent/40",
-                                                                idx === selectedLineIdx
-                                                                        ? "ring-2 ring-primary/60 border-primary/30 bg-primary/5"
-                                                                        : "border-border/50 bg-card",
-                                                        )}
-                                                >
-                                                        <div className="flex items-center gap-3">
-                                                                <div className="min-w-0 flex-1">
-                                                                        <div className="flex items-center gap-2 mb-1.5">
-                                                                                <span
-                                                                                        className={cn(
-                                                                                                "text-[10px] font-bold px-1.5 py-0.5 rounded border leading-none",
-                                                                                                SPEAKER_BADGE[line.speaker] ??
-                                                                                                "bg-muted border-border text-muted-foreground",
-                                                                                        )}
-                                                                                >
-                                                                                        {line.speaker}
-                                                                                </span>
-                                                                                {line.line_number != null && (
-                                                                                        <span className="text-[10px] text-muted-foreground">
-                                                                                                #{line.line_number}
-                                                                                        </span>
-                                                                                )}
-                                                                                {line.emotion && (
-                                                                                        <span className="text-[10px] text-muted-foreground italic">
-                                                                                                {line.emotion}
-                                                                                        </span>
-                                                                                )}
-
-                                                                        </div>
-                                                                        <p className="text-sm text-foreground/80 line-clamp-2 leading-snug">
-                                                                                &ldquo;{line.caption}&rdquo;
-                                                                        </p>
-                                                                </div>
-                                                                <button
-                                                                        type="button"
-                                                                        onClick={(event) => {
-                                                                                event.stopPropagation();
-                                                                                onUploadLine?.(idx);
-                                                                        }}
-                                                                        className="ml-auto flex h-7 w-7 items-center justify-center rounded-md border border-border/60 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-                                                                        aria-label="Upload image"
-                                                                >
-                                                                        <Upload className="h-3.5 w-3.5" />
-                                                                </button>
-                                                        </div>
-                                                </div>
-                                        ))}
-                                </div>
-                        </ScrollArea>
+                    ))}
                 </div>
-        );
-
+            </ScrollArea>
+        </div>
+    );
 }

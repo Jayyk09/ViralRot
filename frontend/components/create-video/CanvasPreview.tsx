@@ -34,9 +34,9 @@ interface CanvasPreviewProps {
     lines: DialogueLine[];
     /** URL of the finalized narration audio - the master playback clock */
     audioUrl: string;
-    /** Real per-line timings from /jobs/generate-audio */
+    /** Real per-line timings from the persisted project narration */
     lineTimings: LineTiming[];
-    /** Real word-level timings from /jobs/generate-audio, if available */
+    /** Real word-level timings from the persisted project narration, if available */
     wordTimestamps?: WordTimestamp[];
     /** Currently selected line index */
     selectedLineIdx: number;

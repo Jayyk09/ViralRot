@@ -7,7 +7,7 @@
  * finalized narration - not by switching between per-line "segments" on a
  * synthetic clock. Line boundaries and captions are derived by looking up
  * the audio's currentTime against real per-line/per-word timings from
- * /jobs/generate-audio, so preview timing matches the final render exactly.
+ * the persisted project narration, so preview timing matches the final render exactly.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -28,9 +28,9 @@ export interface UseCanvasRendererOptions {
     lines: DialogueLine[];
     /** URL of the finalized narration audio - the master clock for playback */
     audioUrl: string;
-    /** Real per-line timings from /jobs/generate-audio (ground truth, not duration_estimate) */
+    /** Real per-line timings from the persisted project narration (ground truth, not duration_estimate) */
     lineTimings: LineTiming[];
-    /** Real word-level timings from /jobs/generate-audio, if MiniMax returned usable data */
+    /** Real word-level timings from the persisted project narration, if MiniMax returned usable data */
     wordTimestamps?: WordTimestamp[];
     /** Initial line to seek to on load */
     initialSegmentIdx?: number;
@@ -163,6 +163,13 @@ export function useCanvasRenderer(
         renderer.addLayer(videoLayer);
         renderer.addLayer(imageLayer);
         renderer.addLayer(captionLayer);
+
+        // Apply the initial props during layer creation. The URL effect may have
+        // already run before the canvas mounted, when no VideoLayer existed yet.
+        if (videoUrl) videoLayer.setVideoUrl(videoUrl);
+        if (previewUrls) imageLayer.setPreviewUrls(previewUrls);
+        captionLayer.setAbsoluteWordTimestamps(wordTimestamps ?? []);
+        renderer.updateConfig({ captionMode });
 
         // Store refs
         rendererRef.current = renderer;

@@ -38,7 +38,7 @@ export class CaptionLayer implements RenderLayer {
     private absoluteWordsByLine: Map<number, WordTimestamp[]> = new Map();
 
     /**
-     * Feed real word-level timings from /jobs/generate-audio. Absolute
+     * Feed real word-level timings from the persisted project narration. Absolute
      * (full-timeline) seconds - converted to segment-local time in
      * prepareKaraokeData once the active line is known.
      */

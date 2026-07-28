@@ -2,9 +2,6 @@
 export const API_BASE_URL = "http://localhost:8000";
 export const WS_BASE_URL = "ws://localhost:8000";
 
-// ============ Source Types ============
-export type SourceType = "youtube" | "audio" | "text" | "pptx";
-
 // ============ Job Types ============
 export type JobType = "transcript_generation" | "video_generation" | "audio_generation";
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
@@ -17,30 +14,19 @@ export type VideoStage =
 export type AudioStage = "tts_generation" | "concatenation" | "uploading";
 
 // ============ Request Types ============
-export interface TranscriptRequest {
-    source_type: SourceType;
+export interface ProjectCreateRequest {
     user_id: number;
-    content?: string; // Required for youtube/text
-    file?: File; // Required for audio/pptx
+    description: string;
+    background_video_id: string;
 }
 
 export interface VideoRequest {
-    transcript: string; // JSON string of dialogue data (required)
+    project_id: string;
     user_id: number;
-    video: string;
-    images?: File[];
-    karaoke_captions?: boolean; // Default: true (karaoke mode ON)
+    karaoke_captions?: boolean;
 }
 
-// ============ Audio Generation Types (Phase 1: pipeline split) ============
-// generate-audio finalizes narration + real timing data with no rendering,
-// so the editor can load real timing before any overlay editing begins.
-
-export interface AudioRequest {
-    transcript: string; // JSON string of dialogue data (required)
-    user_id: number;
-    video: string; // Background video name
-}
+// ============ Persisted narration types ============
 
 /** Real per-line timing, driven by actual TTS audio duration (not duration_estimate) */
 export interface LineTiming {
@@ -70,16 +56,6 @@ export interface AudioResult {
     background_video_url: string;
 }
 
-// ============ Export Types (Phase 1: renders from already-generated audio) ============
-
-export interface ExportRequest {
-    user_id: number;
-    video: string;
-    audio_url: string;
-    line_timings: string; // JSON-stringified LineTiming[]
-    karaoke_captions?: boolean;
-}
-
 // ============ Job Response Types ============
 export interface JobCreatedResponse {
     job_id: string;
@@ -95,22 +71,6 @@ export interface JobCreatedResponse {
 
 // ============ Transcript Types ============
 export type Speaker = "PETER" | "STEWIE";
-
-// ============ Image Position Types || DEPRECATED ============
-// Small: 300px width, lower right half of screen
-export type SmallImagePosition = "right-high" | "right-mid" | "right-low";
-
-// Medium: 540px width (400px at bottom-right to avoid character overlap)
-export type MediumImagePosition = "top-left" | "top-right" | "bottom-right";
-
-// Large: 800px width, top center
-export type LargeImagePosition = "top-center";
-
-// All positions combined
-export type ImagePosition =
-    | SmallImagePosition
-    | MediumImagePosition
-    | LargeImagePosition;
 
 // =============== Image Configuration ====================
 export interface ImageConfig {
@@ -131,14 +91,39 @@ export interface DialogueLine {
     duration_estimate?: number;
 }
 
-// ============ NEW: Single Dialogue Format ============
-export interface SingleDialogue {
-    title: string;
-    dialogue: DialogueLine[];
+export interface ProjectGenerationResult {
+    project_id: string;
 }
 
-export interface TranscriptResult {
-    dialogue: SingleDialogue;
+export interface EditorLineRecord extends DialogueLine {
+    id: string;
+    position: number;
+    revision: number;
+    audio_status: "missing" | "generating" | "ready" | "stale" | "failed";
+}
+
+export interface PersistedComposition {
+    id: string;
+    audio_url: string;
+    duration_ms: number;
+    line_timings: LineTiming[];
+    word_timestamps: WordTimestamp[];
+}
+
+export interface EditorProject {
+    id: string;
+    title: string;
+    background_video_id: string | null;
+    revision: number;
+    dialogue: EditorLineRecord[];
+    active_composition: PersistedComposition | null;
+    exports: Array<{
+        id: number;
+        title: string;
+        storage_key: string;
+        access_url: string;
+        created_at: string;
+    }>;
 }
 
 // ============ Video Result Types ============
@@ -162,7 +147,7 @@ export interface ProgressUpdate {
     message: string;
     current_stage?: TranscriptStage | VideoStage | AudioStage;
     dialogue_title?: string; // New: single dialogue title
-    result?: TranscriptResult | VideoResult | AudioResult;
+    result?: ProjectGenerationResult | VideoResult | AudioResult;
     error?: string;
     // DEPRECATED: Legacy multi-subtopic fields
     current_subtopic?: number;
@@ -171,16 +156,14 @@ export interface ProgressUpdate {
 }
 
 // Type guards for results
-export function isTranscriptResult(
-    result: TranscriptResult | VideoResult | AudioResult | undefined,
-): result is TranscriptResult {
-    return (
-        result !== undefined && "dialogue" in result && !("video_id" in result)
-    );
+export function isProjectGenerationResult(
+    result: ProjectGenerationResult | VideoResult | AudioResult | undefined,
+): result is ProjectGenerationResult {
+    return result !== undefined && "project_id" in result;
 }
 
 export function isVideoResult(
-    result: TranscriptResult | VideoResult | AudioResult | undefined,
+    result: ProjectGenerationResult | VideoResult | AudioResult | undefined,
 ): result is VideoResult {
     return (
         result !== undefined && "video_id" in result && "access_url" in result
@@ -188,7 +171,7 @@ export function isVideoResult(
 }
 
 export function isAudioResult(
-    result: TranscriptResult | VideoResult | AudioResult | undefined,
+    result: ProjectGenerationResult | VideoResult | AudioResult | undefined,
 ): result is AudioResult {
     return (
         result !== undefined && "audio_url" in result && "line_timings" in result
@@ -213,21 +196,6 @@ export interface Video {
     collection_id: number;
     created_at: string;
 }
-
-// ============ Image Editor Types ============
-export interface ImageEditorState {
-    transcript: { dialogue: SingleDialogue }; // Matches API response format
-    imageFiles: Map<string, File>;
-    imagePreviewUrls: Map<string, string>;
-}
-
-export interface ValidationResult {
-    valid: boolean;
-    errors: string[];
-    warnings: string[];
-}
-
-export type ImageSize = "small" | "medium" | "large";
 
 // ============ Error Types ============
 export interface ApiError {

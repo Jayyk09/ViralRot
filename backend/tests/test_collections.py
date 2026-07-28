@@ -148,6 +148,7 @@ class TestVideoCollectionAssociation:
 
         result = service.save_video(
             user_id=1,
+            editor_project_id="11111111-1111-4111-8111-111111111111",
             file_obj=fake_file,
             original_filename="test.mp4",
             title="Test Video",

@@ -168,7 +168,7 @@ export class CanvasRenderer {
 
     /**
      * Compute segment data from real per-line timings (from
-     * /jobs/generate-audio, driven by actual TTS audio duration). This is
+     * the persisted project narration, driven by actual TTS audio duration). This is
      * the ground truth the audio-driven preview clock aligns against -
      * unlike computeSegments, it matches the final render exactly.
      */

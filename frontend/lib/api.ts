@@ -1,12 +1,10 @@
 import {
 	API_BASE_URL,
-	SourceType,
-	TranscriptRequest,
+	ProjectCreateRequest,
 	VideoRequest,
-	AudioRequest,
-	ExportRequest,
 	JobCreatedResponse,
 	ProgressUpdate,
+	EditorProject,
 	VideoApiError,
 } from "./types";
 
@@ -69,90 +67,129 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 // ============ Job Endpoints ============
-export async function generateTranscript(
-	request: TranscriptRequest,
+export async function createEditorProject(
+	request: ProjectCreateRequest,
 ): Promise<JobCreatedResponse> {
-	const formData = new FormData();
-	formData.append("source_type", request.source_type);
-	formData.append("user_id", String(request.user_id));
-
-	if (request.content) {
-		formData.append("content", request.content);
-	}
-
-	if (request.file) {
-		formData.append("file", request.file);
-	}
-
-	const response = await fetchWithRetry(`${API_BASE_URL}/jobs/generate-transcript`, {
+	const response = await fetchWithRetry(`${API_BASE_URL}/editor/projects`, {
 		method: "POST",
-		body: formData,
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			description: request.description,
+			background_video_id: request.background_video_id,
+		}),
 		credentials: "include",
 	});
 
 	return handleResponse<JobCreatedResponse>(response);
+}
+
+export async function fetchEditorProject(projectId: string): Promise<EditorProject> {
+	const response = await fetch(`${API_BASE_URL}/editor/projects/${projectId}`, {
+		credentials: "include",
+	});
+	const payload = await handleResponse<{ project: EditorProject }>(response);
+	return payload.project;
+}
+
+async function editorProjectMutation(
+	url: string,
+	method: "POST" | "PATCH" | "PUT" | "DELETE",
+	body: object,
+): Promise<EditorProject> {
+	const response = await fetch(`${API_BASE_URL}${url}`, {
+		method,
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+		credentials: "include",
+	});
+	const payload = await handleResponse<{ project: EditorProject }>(response);
+	return payload.project;
+}
+
+export function updateEditorProject(
+	projectId: string,
+	input: { title: string; background_video_id: string | null; expected_revision: number },
+): Promise<EditorProject> {
+	return editorProjectMutation(`/editor/projects/${projectId}`, "PATCH", input);
+}
+
+export function addEditorLine(
+	projectId: string,
+	input: {
+		caption: string;
+		speaker: string;
+		emotion?: string;
+		position?: number;
+		expected_project_revision: number;
+	},
+): Promise<EditorProject> {
+	return editorProjectMutation(`/editor/projects/${projectId}/lines`, "POST", input);
+}
+
+export async function updateEditorLine(
+	projectId: string,
+	lineId: string,
+	input: { caption: string; speaker: string; emotion?: string; expected_revision: number },
+): Promise<EditorProject["dialogue"][number]> {
+	const response = await fetch(
+		`${API_BASE_URL}/editor/projects/${projectId}/lines/${lineId}`,
+		{
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(input),
+			credentials: "include",
+		},
+	);
+	const payload = await handleResponse<{ line: EditorProject["dialogue"][number] }>(response);
+	return payload.line;
+}
+
+export function deleteEditorLine(
+	projectId: string,
+	lineId: string,
+	expectedProjectRevision: number,
+): Promise<EditorProject> {
+	return editorProjectMutation(
+		`/editor/projects/${projectId}/lines/${lineId}`,
+		"DELETE",
+		{ expected_project_revision: expectedProjectRevision },
+	);
+}
+
+export function reorderEditorLines(
+	projectId: string,
+	lineIds: string[],
+	expectedProjectRevision: number,
+): Promise<EditorProject> {
+	return editorProjectMutation(`/editor/projects/${projectId}/lines/order`, "PUT", {
+		line_ids: lineIds,
+		expected_project_revision: expectedProjectRevision,
+	});
 }
 
 export async function generateVideo(
 	request: VideoRequest,
 ): Promise<JobCreatedResponse> {
-	const formData = new FormData();
-	formData.append("transcript", request.transcript);
-	formData.append("user_id", String(request.user_id));
-
-	if (request.karaoke_captions !== undefined) {
-		formData.append("karaoke_captions", String(request.karaoke_captions));
-	}
-
-	if (request.images && request.images.length > 0) {
-		request.images.forEach((image) => formData.append("images", image));
-	}
-
-	const response = await fetchWithRetry(`${API_BASE_URL}/jobs/generate-video`, {
-		method: "POST",
-		body: formData,
-		credentials: "include",
-	});
+	const response = await fetchWithRetry(
+		`${API_BASE_URL}/editor/projects/${request.project_id}/video`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ karaoke_captions: request.karaoke_captions ?? true }),
+			credentials: "include",
+		},
+	);
 
 	return handleResponse<JobCreatedResponse>(response);
 }
 
-export async function generateAudio(
-	request: AudioRequest,
+export async function generateProjectAudio(
+	projectId: string,
 ): Promise<JobCreatedResponse> {
-	const formData = new FormData();
-	formData.append("transcript", request.transcript);
-	formData.append("user_id", String(request.user_id));
-	formData.append("video", request.video);
-
-	const response = await fetchWithRetry(`${API_BASE_URL}/jobs/generate-audio`, {
-		method: "POST",
-		body: formData,
-		credentials: "include",
-	});
-
-	return handleResponse<JobCreatedResponse>(response);
-}
-
-export async function exportVideo(
-	request: ExportRequest,
-): Promise<JobCreatedResponse> {
-	const formData = new FormData();
-	formData.append("user_id", String(request.user_id));
-	formData.append("video", request.video);
-	formData.append("audio_url", request.audio_url);
-	formData.append("line_timings", request.line_timings);
-
-	if (request.karaoke_captions !== undefined) {
-		formData.append("karaoke_captions", String(request.karaoke_captions));
-	}
-
-	const response = await fetchWithRetry(`${API_BASE_URL}/jobs/export-video`, {
-		method: "POST",
-		body: formData,
-		credentials: "include",
-	});
-
+	const response = await fetchWithRetry(
+		`${API_BASE_URL}/editor/projects/${projectId}/audio`,
+		{ method: "POST", credentials: "include" },
+	);
 	return handleResponse<JobCreatedResponse>(response);
 }
 
@@ -287,21 +324,6 @@ export async function fetchBackgroundURLs(): Promise<BackgroundUrls> {
 }
 
 // ============ Utility Functions ============
-export function detectSourceType(
-	youtubeUrl?: string,
-	textContent?: string,
-	file?: File,
-): SourceType | null {
-	if (youtubeUrl) return "youtube";
-	if (textContent) return "text";
-	if (file) {
-		const ext = file.name.split(".").pop()?.toLowerCase();
-		if (["mp3", "wav", "ogg", "m4a"].includes(ext || "")) return "audio";
-		if (ext === "pptx") return "pptx";
-	}
-	return null;
-}
-
 export function getStageDescription(stage?: string): string {
 	const descriptions: Record<string, string> = {
 		extracting_content: "Extracting content from source...",

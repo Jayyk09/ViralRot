@@ -8,7 +8,7 @@ interface EditorFooterProps {
     lines: DialogueLine[];
     selectedLineIdx: number;
     onSelectLine: (idx: number) => void;
-    /** Real per-line timings from /jobs/generate-audio - used instead of duration_estimate when present */
+    /** Real per-line timings from the persisted project narration - used instead of duration_estimate when present */
     lineTimings?: LineTiming[];
 }
 
