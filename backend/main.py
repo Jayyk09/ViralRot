@@ -2,26 +2,39 @@ import asyncio
 import os
 import re
 import shutil
+import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi import FastAPI, File, HTTPException, Depends, Query, Request, UploadFile, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
 from services.editor_audio_service import EditorAudioService
+from services.media_service import (
+    MAX_UPLOAD_BYTES,
+    DEFAULT_CLIP_DURATION_MS,
+    MediaAssetService,
+    MediaValidationError,
+)
 from services.video_service import VideoService, get_collection_videos
 from services.collection_service import create_collection, get_collection, get_user_collections, find_last_collection
 from services.progress_service import ProgressService, set_event_loop
 from services.repositories.editor_repository import (
+    EditorClipValidationError,
+    EditorCompositionRequiredError,
     EditorInvalidOrderError,
     EditorLineGeneratingError,
     EditorProjectNotFoundError,
     EditorRepository,
     EditorRevisionConflictError,
+    MediaAssetInUseError,
+    MediaAssetLimitError,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import get_background_video_from_storage
@@ -41,6 +54,9 @@ DIRS = {
 
 for dir in DIRS.values():
     dir.mkdir(parents=True, exist_ok=True)
+
+# Where browsers can reach this API (used for dev asset content URLs).
+PUBLIC_API_BASE_URL = os.getenv("PUBLIC_API_BASE_URL", "http://localhost:8000").rstrip("/")
 
 # ============ Pydantic Models ============
 
@@ -74,6 +90,10 @@ class EditorLineDelete(BaseModel):
     expected_project_revision: int
 
 
+class EditorNarrationRestore(BaseModel):
+    expected_project_revision: int
+
+
 class EditorLineOrderUpdate(BaseModel):
     line_ids: List[UUID]
     expected_project_revision: int
@@ -81,6 +101,32 @@ class EditorLineOrderUpdate(BaseModel):
 
 class EditorVideoGenerateRequest(BaseModel):
     karaoke_captions: bool = True
+
+
+class TimelineClipCreate(BaseModel):
+    asset_id: UUID
+    start_ms: int = Field(ge=0)
+    end_ms: Optional[int] = Field(default=None, gt=0)
+    x: float = Field(default=0.25, ge=0, le=1)
+    y: float = Field(default=0.25, ge=0, le=1)
+    width: float = Field(default=0.5, gt=0, le=1)
+    z_index: int = Field(default=0, ge=-1000, le=1000)
+    expected_project_revision: int
+
+
+class TimelineClipUpdate(BaseModel):
+    asset_id: Optional[UUID] = None
+    start_ms: Optional[int] = Field(default=None, ge=0)
+    end_ms: Optional[int] = Field(default=None, gt=0)
+    x: Optional[float] = Field(default=None, ge=0, le=1)
+    y: Optional[float] = Field(default=None, ge=0, le=1)
+    width: Optional[float] = Field(default=None, gt=0, le=1)
+    z_index: Optional[int] = Field(default=None, ge=-1000, le=1000)
+    expected_revision: int = Field(ge=1)
+
+
+class TimelineClipDelete(BaseModel):
+    expected_project_revision: int
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -121,6 +167,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def reject_oversized_media_uploads(request: Request, call_next):
+    """Reject obviously oversized multipart uploads before Starlette parses them.
+
+    The extra 1 MiB allows multipart headers/boundaries while keeping a lying
+    or absent Content-Length covered by the endpoint's capped read.
+    """
+    if request.method == "POST" and re.fullmatch(
+        r"/editor/projects/[^/]+/assets", request.url.path
+    ):
+        raw_length = request.headers.get("content-length")
+        if raw_length:
+            try:
+                if int(raw_length) > MAX_UPLOAD_BYTES + 1024 * 1024:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Image exceeds the maximum size of 10 MB"},
+                    )
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header"},
+                )
+    return await call_next(request)
+
 
 # Opt-in local development fixtures. Generated media stays untracked and is
 # never exposed by production unless ENABLE_DEV_FIXTURES is explicitly set.
@@ -266,6 +339,19 @@ async def _run_blocking(func, *args, **kwargs):
     return await asyncio.to_thread(func, *args, **kwargs)
 
 
+def _asset_access_url(storage, asset: dict, project_id: Optional[UUID] = None) -> str:
+    """Browser URL for an overlay asset through the authenticated API.
+
+    The proxied MVP deliberately avoids requiring browser-facing R2 CORS and
+    keeps local/R2 preview behavior identical. Export still reads storage keys.
+    """
+    owner_project_id = asset.get("project_id") or project_id
+    return (
+        f"{PUBLIC_API_BASE_URL}/editor/projects/{owner_project_id}"
+        f"/assets/{asset['id']}/content"
+    )
+
+
 def _editor_project_response(project: dict) -> dict:
     """Attach fresh artifact URLs and timeline data to a repository project."""
     storage = get_storage_backend()
@@ -310,6 +396,12 @@ def _editor_project_response(project: dict) -> dict:
         }
     for video in result.get("exports", []):
         video["access_url"] = storage.generate_url(video["storage_key"])
+    # Overlay asset URLs are minted fresh at read time, never persisted.
+    assets = result.get("media_assets") or []
+    for asset in assets:
+        asset["access_url"] = _asset_access_url(storage, asset, result.get("id"))
+    result["media_assets"] = assets
+    result["timeline_clips"] = result.get("timeline_clips") or []
     return result
 
 
@@ -531,6 +623,256 @@ async def update_editor_line(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.post("/editor/projects/{project_id}/restore-narrated-script")
+async def restore_narrated_script(
+    project_id: UUID,
+    payload: EditorNarrationRestore,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Restore text/speaker/emotion from the latest successful narration.
+
+    Structural script edits are deliberately excluded from this first version.
+    Visual media and timeline clips are never modified by this operation.
+    """
+    try:
+        project = await _run_blocking(
+            editor_repository.restore_narrated_script,
+            project_id,
+            user_id,
+            payload.expected_project_revision,
+        )
+        return {"project": _editor_project_response(project)}
+    except EditorProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (
+        EditorRevisionConflictError,
+        EditorCompositionRequiredError,
+        EditorInvalidOrderError,
+    ) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ============ Media Asset & Timeline Clip Endpoints ============
+
+
+@app.post("/editor/projects/{project_id}/assets", status_code=201)
+async def upload_editor_asset(
+    project_id: UUID,
+    file: UploadFile = File(...),
+    user_id: int = Depends(get_current_user_id),
+):
+    """Proxied multipart image upload. Creates the asset only (no clip).
+
+    The image is validated (PNG/JPEG/WebP, <=10MB, <=4096x4096), normalized
+    to a single WebP with EXIF orientation applied and metadata discarded,
+    and stored under a server-generated key. The original is not retained.
+    """
+    project = await _run_blocking(editor_repository.get_project, project_id, user_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Editor project not found")
+
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Image exceeds the maximum size of {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+        )
+
+    service = MediaAssetService(repository=editor_repository)
+    try:
+        asset = await _run_blocking(
+            service.upload_image,
+            project_id,
+            user_id,
+            data,
+            file.filename or "image",
+            file.content_type,
+        )
+    except (MediaValidationError, MediaAssetLimitError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except EditorProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    asset = dict(asset)
+    asset["access_url"] = _asset_access_url(service.storage, asset, project_id)
+    return {"asset": asset}
+
+
+@app.get("/editor/projects/{project_id}/assets/{asset_id}/content")
+async def get_editor_asset_content(
+    project_id: UUID,
+    asset_id: UUID,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Stream asset bytes through the API (dev parity for local storage)."""
+    try:
+        asset = await _run_blocking(
+            editor_repository.get_media_asset, project_id, asset_id, user_id
+        )
+    except EditorProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    storage = get_storage_backend()
+    handle = tempfile.NamedTemporaryFile(delete=False, suffix=".webp")
+    handle.close()
+    try:
+        await _run_blocking(storage.download, asset["storage_key"], handle.name)
+    except FileNotFoundError as exc:
+        os.remove(handle.name)
+        raise HTTPException(status_code=404, detail="Asset object not found") from exc
+    except Exception as exc:
+        os.remove(handle.name)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return FileResponse(
+        handle.name,
+        media_type=asset["content_type"],
+        background=BackgroundTask(os.remove, handle.name),
+        # Assets are immutable once created (new upload => new key)
+        headers={"Cache-Control": "private, max-age=3600, immutable"},
+    )
+
+
+@app.delete("/editor/projects/{project_id}/assets/{asset_id}")
+async def delete_editor_asset(
+    project_id: UUID,
+    asset_id: UUID,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Delete an asset that no timeline clip references (409 otherwise)."""
+    service = MediaAssetService(repository=editor_repository)
+    try:
+        await _run_blocking(service.delete_asset, project_id, asset_id, user_id)
+        project = await _run_blocking(
+            editor_repository.get_project, project_id, user_id
+        )
+    except EditorProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except MediaAssetInUseError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": str(exc),
+                "referencing_clip_ids": exc.referencing_clip_ids,
+            },
+        ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if project is None:
+        raise HTTPException(status_code=404, detail="Editor project not found")
+    return {"project": _editor_project_response(project)}
+
+
+@app.post("/editor/projects/{project_id}/clips", status_code=201)
+async def add_timeline_clip(
+    project_id: UUID,
+    payload: TimelineClipCreate,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Place an asset on the timeline at the playhead.
+
+    Defaults to a 3-second window when end_ms is omitted; the end is clamped
+    to the active composition duration. Requires active narration. Bumps the
+    project revision WITHOUT invalidating the composition.
+    """
+    end_ms = payload.end_ms
+    if end_ms is None:
+        end_ms = payload.start_ms + DEFAULT_CLIP_DURATION_MS
+    try:
+        project = await _run_blocking(
+            editor_repository.create_timeline_clip,
+            project_id,
+            user_id,
+            payload.asset_id,
+            payload.start_ms,
+            end_ms,
+            payload.x,
+            payload.y,
+            payload.width,
+            payload.z_index,
+            payload.expected_project_revision,
+        )
+        return {"project": _editor_project_response(project)}
+    except EditorProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (EditorRevisionConflictError, EditorCompositionRequiredError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EditorClipValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.patch("/editor/projects/{project_id}/clips/{clip_id}")
+async def update_timeline_clip(
+    project_id: UUID,
+    clip_id: UUID,
+    payload: TimelineClipUpdate,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Debounced autosave edit: clip-scoped revision only.
+
+    Replacing asset_id preserves geometry/timing (only provided fields
+    change). Never touches the project revision or active composition.
+    """
+    updates = payload.model_dump(
+        exclude_unset=True, exclude={"expected_revision"}, exclude_none=True
+    )
+    if not updates:
+        raise HTTPException(status_code=422, detail="No clip fields to update")
+    try:
+        clip = await _run_blocking(
+            editor_repository.update_timeline_clip,
+            project_id,
+            clip_id,
+            user_id,
+            updates,
+            payload.expected_revision,
+        )
+        return {"clip": clip}
+    except EditorProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (EditorRevisionConflictError, EditorCompositionRequiredError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EditorClipValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.delete("/editor/projects/{project_id}/clips/{clip_id}")
+async def delete_timeline_clip(
+    project_id: UUID,
+    clip_id: UUID,
+    payload: TimelineClipDelete,
+    user_id: int = Depends(get_current_user_id),
+):
+    try:
+        project = await _run_blocking(
+            editor_repository.delete_timeline_clip,
+            project_id,
+            clip_id,
+            user_id,
+            payload.expected_project_revision,
+        )
+        return {"project": _editor_project_response(project)}
+    except EditorProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except EditorRevisionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 # ============ Async Job Endpoints (with Progress Tracking) ============
 
 async def _process_project_audio_job(
@@ -659,6 +1001,7 @@ async def create_video_job(
         job_id=job_id,
         project_id=project_id,
         user_id=user_id,
+        project_snapshot=project,
         karaoke_captions=payload.karaoke_captions,
     )
     return {
@@ -676,15 +1019,16 @@ async def _process_project_video_job(
     job_id: str,
     project_id: UUID,
     user_id: int,
+    project_snapshot: dict,
     karaoke_captions: bool,
 ):
-    """Render from the exact active composition; never invoke TTS."""
+    """Render the immutable project snapshot accepted by the export request."""
     export_dir = DIRS["output"] / f"project_{project_id}_{uuid4().hex}"
     export_dir.mkdir(parents=True, exist_ok=True)
     try:
-        project = await _run_blocking(
-            editor_repository.get_project, project_id, user_id
-        )
+        # Use the snapshot captured synchronously by the 202 endpoint. Edits made
+        # after Export is clicked belong to the next export, never this job.
+        project = project_snapshot
         if not project or not project["active_composition_id"]:
             raise ValueError("Regenerate narration before generating the video")
         composition_key = project["active_composition_storage_key"]
@@ -701,6 +1045,42 @@ async def _process_project_video_job(
         audio_path = export_dir / "narration.mp3"
         storage = get_storage_backend()
         await _run_blocking(storage.download, composition_key, str(audio_path))
+
+        # Snapshot overlay clips + assets from the same project read (torn
+        # states are impossible) and fetch images by storage key - never by
+        # presigned URL, which could expire mid-render.
+        overlay_clips = []
+        timeline_clips = project.get("timeline_clips") or []
+        if timeline_clips:
+            assets_by_id = {
+                str(asset["id"]): asset
+                for asset in project.get("media_assets") or []
+            }
+            downloaded_by_key: Dict[str, str] = {}
+            for clip in timeline_clips:
+                # Fully out-of-range clips survive regeneration for user review,
+                # but do not participate in preview/export until retimed.
+                if clip.get("timing_status") != "aligned":
+                    continue
+                asset = assets_by_id.get(str(clip["asset_id"]))
+                if asset is None:
+                    continue
+                asset_key = asset["storage_key"]
+                if asset_key not in downloaded_by_key:
+                    local_image = export_dir / f"overlay_{len(downloaded_by_key)}.webp"
+                    await _run_blocking(storage.download, asset_key, str(local_image))
+                    downloaded_by_key[asset_key] = str(local_image)
+                overlay_clips.append(
+                    {
+                        "path": downloaded_by_key[asset_key],
+                        "x": float(clip["x"]),
+                        "y": float(clip["y"]),
+                        "width": float(clip["width"]),
+                        "start": clip["start_ms"] / 1000,
+                        "end": clip["end_ms"] / 1000,
+                        "z_index": clip["z_index"],
+                    }
+                )
 
         timings = [
             {
@@ -724,6 +1104,7 @@ async def _process_project_video_job(
             output_file=str(output_path),
             educational_images=None,
             caption_mode="karaoke" if karaoke_captions else "box",
+            overlay_clips=overlay_clips,
         )
 
         ProgressService.update_job(job_id=job_id, current_stage="uploading")

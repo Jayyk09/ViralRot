@@ -71,6 +71,28 @@ def test_update_editor_line_returns_conflict_for_stale_revision(client):
     assert "current revision is 2" in response.json()["detail"]
 
 
+def test_restore_narrated_script_returns_project_without_visual_mutation(client):
+    stored = {
+        "id": PROJECT_ID,
+        "revision": 4,
+        "dialogue": [],
+        "media_assets": [{"id": "asset-1"}],
+        "timeline_clips": [{"id": "clip-1", "start_ms": 1000, "end_ms": 3000}],
+        "exports": [],
+    }
+    with patch(
+        "main.editor_repository.restore_narrated_script", return_value=stored
+    ) as restore:
+        response = client.post(
+            f"/editor/projects/{PROJECT_ID}/restore-narrated-script",
+            json={"expected_project_revision": 3},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["project"]["timeline_clips"] == stored["timeline_clips"]
+    restore.assert_called_once_with(PROJECT_ID, 1, 3)
+
+
 def test_add_editor_line_returns_updated_project(client):
     stored = {"id": PROJECT_ID, "revision": 2, "dialogue": []}
     with patch("main.editor_repository.add_line", return_value=stored) as add:
