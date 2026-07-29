@@ -5,6 +5,8 @@ import {
 	JobCreatedResponse,
 	ProgressUpdate,
 	EditorProject,
+	MediaAsset,
+	TimelineClip,
 	VideoApiError,
 } from "./types";
 
@@ -144,6 +146,17 @@ export async function updateEditorLine(
 	return payload.line;
 }
 
+export function restoreNarratedScript(
+	projectId: string,
+	expectedProjectRevision: number,
+): Promise<EditorProject> {
+	return editorProjectMutation(
+		`/editor/projects/${projectId}/restore-narrated-script`,
+		"POST",
+		{ expected_project_revision: expectedProjectRevision },
+	);
+}
+
 export function deleteEditorLine(
 	projectId: string,
 	lineId: string,
@@ -165,6 +178,68 @@ export function reorderEditorLines(
 		line_ids: lineIds,
 		expected_project_revision: expectedProjectRevision,
 	});
+}
+
+export async function uploadMediaAsset(projectId: string, file: File): Promise<MediaAsset> {
+	const form = new FormData();
+	form.append("file", file);
+	const response = await fetch(`${API_BASE_URL}/editor/projects/${projectId}/assets`, {
+		method: "POST",
+		body: form,
+		credentials: "include",
+	});
+	const payload = await handleResponse<{ asset: MediaAsset }>(response);
+	return payload.asset;
+}
+
+export function createTimelineClip(
+	projectId: string,
+	input: {
+		asset_id: string;
+		start_ms: number;
+		end_ms: number;
+		x: number;
+		y: number;
+		width: number;
+		z_index: number;
+		expected_project_revision: number;
+	},
+): Promise<EditorProject> {
+	return editorProjectMutation(`/editor/projects/${projectId}/clips`, "POST", input);
+}
+
+export async function updateTimelineClip(
+	projectId: string,
+	clipId: string,
+	input: Partial<Pick<TimelineClip, "asset_id" | "start_ms" | "end_ms" | "x" | "y" | "width" | "z_index">> & { expected_revision: number },
+): Promise<TimelineClip> {
+	const response = await fetch(`${API_BASE_URL}/editor/projects/${projectId}/clips/${clipId}`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(input),
+		credentials: "include",
+	});
+	const payload = await handleResponse<{ clip: TimelineClip }>(response);
+	return payload.clip;
+}
+
+export function deleteTimelineClip(
+	projectId: string,
+	clipId: string,
+	expectedProjectRevision: number,
+): Promise<EditorProject> {
+	return editorProjectMutation(`/editor/projects/${projectId}/clips/${clipId}`, "DELETE", {
+		expected_project_revision: expectedProjectRevision,
+	});
+}
+
+export async function deleteMediaAsset(projectId: string, assetId: string): Promise<EditorProject> {
+	const response = await fetch(`${API_BASE_URL}/editor/projects/${projectId}/assets/${assetId}`, {
+		method: "DELETE",
+		credentials: "include",
+	});
+	const payload = await handleResponse<{ project: EditorProject }>(response);
+	return payload.project;
 }
 
 export async function generateVideo(
