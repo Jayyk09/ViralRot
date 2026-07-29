@@ -1,26 +1,14 @@
 "use client";
 
-import { BackgroundUrl, BackgroundUrls } from "@/lib/api";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import Link from "next/link";
+import { ArrowLeft, Download, Loader2, Redo2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Download, Film, Loader2, Mic, Save, Video } from "lucide-react";
 
 interface EditorHeaderProps {
     title: string;
     onTitleChange: (title: string) => void;
-    videoOptions: BackgroundUrls;
-    selectedVideo: BackgroundUrl;
-    onVideoChange: (video: BackgroundUrl) => void;
-    onGenerateNarration: () => void;
     onGenerateVideo: () => void;
     narrationReady: boolean;
-    isGeneratingNarration: boolean;
     isGeneratingVideo: boolean;
     saveStatus: "saved" | "saving" | "conflict";
     actionsDisabled?: boolean;
@@ -30,81 +18,65 @@ interface EditorHeaderProps {
 export function EditorHeader({
     title,
     onTitleChange,
-    videoOptions,
-    selectedVideo,
-    onVideoChange,
-    onGenerateNarration,
     onGenerateVideo,
     narrationReady,
-    isGeneratingNarration,
     isGeneratingVideo,
     saveStatus,
     actionsDisabled,
     exportUrl,
 }: EditorHeaderProps) {
     return (
-        <div className="panel-edge flex h-12 shrink-0 items-center gap-3 border-b border-border/60 bg-card px-4">
-            <div className="min-w-0">
-                <Input
-                    defaultValue={title}
-                    onBlur={(event) => {
-                        const next = event.target.value.trim();
-                        if (next && next !== title) onTitleChange(next);
-                    }}
-                    className="h-6 w-56 border-0 bg-transparent px-0 font-[family-name:var(--font-heading)] text-sm font-semibold shadow-none focus-visible:ring-0"
-                    aria-label="Project title"
-                />
-                <p className="flex items-center gap-1 font-mono text-[9px] uppercase text-muted-foreground">
-                    <Save className="h-2.5 w-2.5" /> {saveStatus}
-                </p>
-            </div>
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-[#30302e] bg-[#1a1a19] px-3">
+            <Button variant="ghost" size="icon-xs" asChild className="text-[#918d86] hover:text-[#e6e2db]">
+                <Link href="/create" aria-label="Back to create">
+                    <ArrowLeft />
+                </Link>
+            </Button>
 
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="ml-3 h-7 gap-1.5 font-mono text-xs">
-                        <Film className="h-3.5 w-3.5 text-primary" />
-                        {selectedVideo.id}
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                    {videoOptions.videos.map((video) => (
-                        <DropdownMenuItem key={video.id} onSelect={() => onVideoChange(video)}>
-                            {video.id}
-                        </DropdownMenuItem>
-                    ))}
-                </DropdownMenuContent>
-            </DropdownMenu>
+            <input
+                defaultValue={title}
+                onBlur={(event) => {
+                    const next = event.target.value.trim();
+                    if (next && next !== title) onTitleChange(next);
+                }}
+                className="min-w-0 w-64 bg-transparent px-1 text-[12px] font-medium text-[#e6e2db] outline-none"
+                aria-label="Project title"
+            />
+
+            {saveStatus !== "saved" && (
+                <span className={saveStatus === "conflict" ? "text-[10px] text-destructive" : "text-[10px] text-[#77736d]"}>
+                    {saveStatus === "conflict" ? "Couldn’t save" : "Saving…"}
+                </span>
+            )}
 
             <div className="flex-1" />
 
-            <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={onGenerateNarration}
-                disabled={actionsDisabled || isGeneratingNarration || isGeneratingVideo}
-            >
-                {isGeneratingNarration ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Mic className="mr-1.5 h-3.5 w-3.5" />}
-                {narrationReady ? "Regenerate narration" : "Generate narration"}
+            <Button variant="ghost" size="icon-xs" disabled aria-label="Undo" className="text-[#77736d]">
+                <Undo2 />
+            </Button>
+            <Button variant="ghost" size="icon-xs" disabled aria-label="Redo" className="text-[#77736d]">
+                <Redo2 />
             </Button>
 
-            <Button
-                size="sm"
-                className="h-8 text-xs"
-                onClick={onGenerateVideo}
-                disabled={actionsDisabled || !narrationReady || isGeneratingNarration || isGeneratingVideo}
-            >
-                {isGeneratingVideo ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Video className="mr-1.5 h-3.5 w-3.5" />}
-                {isGeneratingVideo ? "Rendering…" : "Generate video"}
-            </Button>
+            <span className="ml-1 rounded-full border border-[#3a3a38] px-2.5 py-1 font-mono text-[10px] text-[#8a867f]">9:16</span>
 
             {exportUrl && (
-                <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+                <Button variant="ghost" size="sm" className="ml-1 h-7 rounded-full px-3 text-[11px] text-[#aaa69f]" asChild>
                     <a href={exportUrl} target="_blank" rel="noopener noreferrer">
-                        <Download className="mr-1.5 h-3.5 w-3.5" /> Download
+                        <Download className="h-3.5 w-3.5" /> Latest
                     </a>
                 </Button>
             )}
-        </div>
+            <Button
+                size="sm"
+                className="h-7 rounded-full px-4 text-[11px]"
+                onClick={onGenerateVideo}
+                disabled={actionsDisabled || !narrationReady || isGeneratingVideo}
+                title={!narrationReady ? "Prepare preview audio before exporting" : "Export video"}
+            >
+                {isGeneratingVideo && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {isGeneratingVideo ? "Exporting…" : exportUrl ? "Export again" : "Export"}
+            </Button>
+        </header>
     );
 }

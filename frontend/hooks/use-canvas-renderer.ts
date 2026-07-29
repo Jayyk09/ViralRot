@@ -15,11 +15,12 @@ import {
     CanvasRenderer,
     VideoLayer,
     ImageOverlayLayer,
+    CharacterLayer,
     CaptionLayer,
     SegmentData,
     CaptionMode,
 } from "@/lib/canvas-renderer";
-import { DialogueLine, LineTiming, WordTimestamp } from "@/lib/types";
+import { DialogueLine, LineTiming, MediaAsset, TimelineClip, WordTimestamp } from "@/lib/types";
 
 export interface UseCanvasRendererOptions {
     /** URL of the background video */
@@ -36,8 +37,9 @@ export interface UseCanvasRendererOptions {
     initialSegmentIdx?: number;
     /** Whether to autoplay once the first segment is ready */
     autoplay?: boolean;
-    /** Preview URLs for local blob images (filename -> blob URL) */
-    previewUrls?: Map<string, string>;
+    /** Project-level media, independent of dialogue segments. */
+    mediaAssets?: MediaAsset[];
+    timelineClips?: TimelineClip[];
     /** Caption rendering mode: "box" or "karaoke" */
     captionMode?: CaptionMode;
 }
@@ -49,6 +51,8 @@ export interface UseCanvasRendererReturn {
     currentSegmentIdx: number;
     /** Seek playback to the start of this line */
     setCurrentSegmentIdx: (idx: number) => void;
+    /** Seek the master playback clock to an absolute project time. */
+    seekToTime: (seconds: number) => void;
     /** Whether the audio is playing */
     isPlaying: boolean;
     /** Toggle play/pause */
@@ -78,7 +82,8 @@ export function useCanvasRenderer(
         wordTimestamps,
         initialSegmentIdx = 0,
         autoplay = true,
-        previewUrls,
+        mediaAssets = [],
+        timelineClips = [],
         captionMode = "box",
     } = options;
 
@@ -158,16 +163,18 @@ export function useCanvasRenderer(
         // Create and add layers
         const videoLayer = new VideoLayer();
         const imageLayer = new ImageOverlayLayer();
+        const characterLayer = new CharacterLayer();
         const captionLayer = new CaptionLayer();
 
         renderer.addLayer(videoLayer);
         renderer.addLayer(imageLayer);
+        renderer.addLayer(characterLayer);
         renderer.addLayer(captionLayer);
 
         // Apply the initial props during layer creation. The URL effect may have
         // already run before the canvas mounted, when no VideoLayer existed yet.
         if (videoUrl) videoLayer.setVideoUrl(videoUrl);
-        if (previewUrls) imageLayer.setPreviewUrls(previewUrls);
+        imageLayer.setMedia(timelineClips, mediaAssets);
         captionLayer.setAbsoluteWordTimestamps(wordTimestamps ?? []);
         renderer.updateConfig({ captionMode });
 
@@ -196,13 +203,16 @@ export function useCanvasRenderer(
         }
     }, [videoUrl]);
 
-    // Update preview URLs when they change
+    // Update project-level timeline visuals without reinitializing playback.
     useEffect(() => {
-        if (imageLayerRef.current && previewUrls) {
-            imageLayerRef.current.setPreviewUrls(previewUrls);
-            imageLayerRef.current.clearCache();
-        }
-    }, [previewUrls]);
+        const layer = imageLayerRef.current;
+        const renderer = rendererRef.current;
+        if (!layer || !renderer) return;
+        layer.setMedia(timelineClips, mediaAssets);
+        void layer.loadMedia().then(() => {
+            renderer.seek(renderer.getState().currentTime);
+        });
+    }, [mediaAssets, timelineClips]);
 
     // Feed real word timestamps into the caption layer (grouped by line index)
     useEffect(() => {
@@ -328,6 +338,14 @@ export function useCanvasRenderer(
         [segments],
     );
 
+    const seekToTime = useCallback((seconds: number) => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        const duration = Number.isFinite(audio.duration) ? audio.duration : seconds;
+        audio.currentTime = Math.max(0, Math.min(seconds, duration));
+        setCurrentTime(audio.currentTime);
+    }, []);
+
     // Current segment data
     const currentSegment = segments[currentSegmentIdx] ?? null;
 
@@ -335,6 +353,7 @@ export function useCanvasRenderer(
         canvasRef,
         currentSegmentIdx,
         setCurrentSegmentIdx,
+        seekToTime,
         isPlaying,
         togglePlayback,
         play,

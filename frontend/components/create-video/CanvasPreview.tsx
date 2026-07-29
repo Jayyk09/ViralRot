@@ -8,24 +8,19 @@
  *
  * Features:
  * - Looping background video
- * - Educational images at correct positions
+ * - Project-level timeline visuals at absolute times
  * - Styled captions (speaker colors, text wrapping)
  * - Segment-based preview (shows selected dialogue line)
- * - Unified image editing: drag to move, corner handles to resize, X to delete
+ * - Visual selection and geometry editing independent of dialogue lines
  */
 
 import { useEffect, useRef } from "react";
-import { DialogueLine, ImageConfig, LineTiming, WordTimestamp } from "@/lib/types";
+import { DialogueLine, LineTiming, MediaAsset, TimelineClip, WordTimestamp } from "@/lib/types";
 import { CaptionMode } from "@/lib/canvas-renderer";
 import { useCanvasRenderer } from "@/hooks/use-canvas-renderer";
 import { ImageOverlayEditor } from "./ImageOverlayEditor";
 import { Play, Pause, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface PlacingImage {
-    file: File;
-    previewUrl: string;
-}
 
 interface CanvasPreviewProps {
     /** URL of the background video */
@@ -42,20 +37,18 @@ interface CanvasPreviewProps {
     selectedLineIdx: number;
     /** Callback fired whenever the actively-playing line changes */
     onSegmentChange?: (idx: number) => void;
-    /** Preview URLs for local blob images (filename -> blob URL) */
-    previewUrls?: Map<string, string>;
+    /** Callback fired as the master playback clock advances */
+    onTimeChange?: (seconds: number) => void;
+    /** Absolute project time requested by timeline selection. */
+    seekRequest?: { time: number; nonce: number } | null;
+    /** Project-level visual media and timeline placements. */
+    mediaAssets: MediaAsset[];
+    timelineClips: TimelineClip[];
+    selectedClipId: string | null;
+    onSelectClip: (clipId: string) => void;
+    onUpdateClip: (clipId: string, updates: Partial<TimelineClip>) => void;
     /** Caption rendering mode */
     captionMode?: CaptionMode;
-    /** Image currently being placed (if any) */
-    placingImage?: PlacingImage | null;
-    /** Callback when image placement is confirmed (auto-called with default position) */
-    onImagePlaced?: (x: number, y: number, width: number) => void;
-    /** Callback when image placement is cancelled */
-    onCancelPlacement?: () => void;
-    /** Callback when an existing image is updated (position/size) */
-    onUpdateImage?: (lineIdx: number, imageIdx: number, updates: Partial<ImageConfig>) => void;
-    /** Callback when user wants to delete an existing image */
-    onDeleteImage?: (lineIdx: number, imageIdx: number) => void;
     /** Additional class names */
     className?: string;
 }
@@ -68,23 +61,25 @@ export function CanvasPreview({
     wordTimestamps,
     selectedLineIdx,
     onSegmentChange,
-    previewUrls,
+    onTimeChange,
+    seekRequest,
+    mediaAssets,
+    timelineClips,
+    selectedClipId,
+    onSelectClip,
+    onUpdateClip,
     captionMode = "box",
-    placingImage,
-    onImagePlaced,
-    onCancelPlacement,
-    onUpdateImage,
-    onDeleteImage,
     className,
 }: CanvasPreviewProps) {
     const {
         canvasRef,
         currentSegmentIdx,
         setCurrentSegmentIdx,
+        seekToTime,
         isPlaying,
         togglePlayback,
         isLoading,
-        currentSegment,
+        currentTime,
     } = useCanvasRenderer({
         videoUrl,
         lines,
@@ -92,14 +87,16 @@ export function CanvasPreview({
         lineTimings,
         wordTimestamps,
         initialSegmentIdx: selectedLineIdx,
-        autoplay: true,
-        previewUrls,
+        autoplay: false,
+        mediaAssets,
+        timelineClips,
         captionMode,
     });
 
     // Seek playback when the externally-selected line changes (e.g. clicking
     // a line in the dialogue list or footer timeline)
     const lastRequestedIdx = useRef(selectedLineIdx);
+    const lastReportedTime = useRef(-1);
     useEffect(() => {
         if (selectedLineIdx !== lastRequestedIdx.current) {
             lastRequestedIdx.current = selectedLineIdx;
@@ -115,21 +112,21 @@ export function CanvasPreview({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentSegmentIdx]);
 
-    const handleImagePlaced = (x: number, y: number, width: number) => {
-        onImagePlaced?.(x, y, width);
-    };
+    useEffect(() => {
+        // Keep the external playhead near 30fps. The previous 100ms threshold
+        // made timeline playback visibly jump in tenths of a second.
+        if (Math.abs(currentTime - lastReportedTime.current) < 1 / 30) return;
+        lastReportedTime.current = currentTime;
+        onTimeChange?.(currentTime);
+    }, [currentTime, onTimeChange]);
 
-    const handleUpdateImage = (imageIdx: number, updates: Partial<ImageConfig>) => {
-        onUpdateImage?.(selectedLineIdx, imageIdx, updates);
-    };
+    useEffect(() => {
+        if (seekRequest) seekToTime(seekRequest.time);
+    }, [seekRequest, seekToTime]);
 
-    const handleDeleteImage = (imageIdx: number) => {
-        onDeleteImage?.(selectedLineIdx, imageIdx);
-    };
-
-    // Get current line's images
-    const currentLine = lines[selectedLineIdx];
-    const currentImages = currentLine?.images ?? [];
+    const activeVisualClips = timelineClips.filter(
+        (clip) => clip.timing_status === "aligned" && currentTime * 1000 >= clip.start_ms && currentTime * 1000 < clip.end_ms,
+    );
 
     return (
         <div
@@ -144,16 +141,13 @@ export function CanvasPreview({
                 className="w-full h-full rounded"
             />
 
-            {/* Image Overlay Editor - handles both new and existing images */}
-            {previewUrls && (currentImages.length > 0 || placingImage) && (
+            {activeVisualClips.length > 0 && (
                 <ImageOverlayEditor
-                    images={currentImages}
-                    previewUrls={previewUrls}
-                    placingImage={placingImage}
-                    onImagePlaced={handleImagePlaced}
-                    onUpdateImage={handleUpdateImage}
-                    onDeleteImage={handleDeleteImage}
-                    onCancelPlacement={onCancelPlacement}
+                    clips={activeVisualClips}
+                    assets={mediaAssets}
+                    selectedClipId={selectedClipId}
+                    onSelectClip={onSelectClip}
+                    onUpdateClip={onUpdateClip}
                 />
             )}
 
@@ -179,26 +173,6 @@ export function CanvasPreview({
                 </button>
             </div>
 
-            {/* Segment Info */}
-            {currentSegment && (
-                <div className="absolute top-3 left-3 px-2 py-1 rounded bg-background/70 text-foreground text-xs font-mono">
-                    Line {currentSegmentIdx + 1}/{lines.length}
-                </div>
-            )}
-
-            {/* Speaker Badge */}
-            {currentSegment && (
-                <div
-                    className={cn(
-                        "absolute top-3 right-3 px-2 py-1 rounded text-xs font-bold uppercase",
-                        currentSegment.line.speaker === "PETER"
-                            ? "bg-chart-1 text-primary-foreground"
-                            : "bg-chart-4 text-primary-foreground",
-                    )}
-                >
-                    {currentSegment.line.speaker}
-                </div>
-            )}
         </div>
     );
 }

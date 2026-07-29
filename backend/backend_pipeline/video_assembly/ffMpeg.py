@@ -192,6 +192,7 @@ def create_video_with_audio_and_captions(
     stewie_image=None,  # Deprecated, kept for backward compatibility
     educational_images=None,  # List of educational image configs
     caption_mode="box",  # "box" (default) or "karaoke" (word-by-word highlight)
+    overlay_clips=None,  # Timeline-native freeform image overlays (see docstring)
 ):
     """
     Create a video with looping background, audio, caption overlays, and character images.
@@ -216,6 +217,14 @@ def create_video_with_audio_and_captions(
             
             Limits: 1 large OR 2 medium, AND up to 3 small images simultaneously
         caption_mode: Caption style - "box" for background box, "karaoke" for word highlight
+        overlay_clips: Timeline-native freeform image overlays. Rendered directly
+            above the background but BELOW character overlays and captions,
+            in ascending z_index (painter order). Each entry:
+            - path: Image file path
+            - x, y: Normalized top-left anchor (0..1 fraction of the frame)
+            - width: Normalized width (0..1); height keeps the image aspect
+            - start, end: Absolute time window in seconds
+            - z_index: Paint order (lower first)
     
     Returns:
         Path to output video
@@ -369,7 +378,54 @@ def create_video_with_audio_and_captions(
     ]
     
     current_stream = "[bg]"
-    input_index = 2  # 0=background, 1=audio, 2+=character images
+    input_index = 2  # 0=background, 1=audio, 2+=overlay clips, then character images
+    overlay_count = 0
+
+    # ============ Timeline Overlay Clips (freeform, normalized geometry) ============
+    # Composited first so they sit directly above the background and BELOW the
+    # character overlays and captions added later in the chain.
+    timeline_overlays = []
+    for clip in sorted(overlay_clips or [], key=lambda c: c.get("z_index", 0)):
+        if os.path.exists(clip["path"]):
+            timeline_overlays.append(clip)
+        else:
+            print(f"⚠️  Warning: Overlay clip image not found: {clip['path']}")
+    clip_scaled_streams = []
+    for i, clip in enumerate(timeline_overlays):
+        clip_width_px = max(1, round(float(clip["width"]) * video_size[0]))
+        stream_name = f"clipimg_{i}"
+        # scale=w:-1 keeps the intrinsic aspect ratio, matching the canvas preview
+        filter_parts.append(f"[{input_index}:v]scale={clip_width_px}:-1[{stream_name}]")
+        clip_scaled_streams.append({"stream": f"[{stream_name}]", "path": clip["path"]})
+        input_index += 1
+
+        x_px = round(float(clip["x"]) * video_size[0])
+        y_px = round(float(clip["y"]) * video_size[1])
+        # Match the canvas's [start, end) interval exactly; between() is
+        # inclusive at both ends and can flash adjacent clips for one frame.
+        enable_expr = (
+            f"gte(t,{round(clip['start'], 3)})*"
+            f"lt(t,{round(clip['end'], 3)})"
+        )
+        filter_parts.append(
+            f"{current_stream}[{stream_name}]"
+            f"overlay=x={x_px}:y={y_px}:enable='{enable_expr}'[tmp_{overlay_count}]"
+        )
+        current_stream = f"[tmp_{overlay_count}]"
+        overlay_count += 1
+
+    if timeline_overlays:
+        print(f"\n{'='*60}")
+        print(f"🖼️  TIMELINE OVERLAY CLIPS DEBUG")
+        print(f"{'='*60}")
+        for i, clip in enumerate(timeline_overlays):
+            print(
+                f"  [{i}] z={clip.get('z_index', 0)} "
+                f"x={clip['x']:.3f} y={clip['y']:.3f} w={clip['width']:.3f} "
+                f"{clip['start']:.2f}s - {clip['end']:.2f}s :: {clip['path']}"
+            )
+        print(f"{'='*60}\n")
+
     character_height = 800
     peter_margin = 0   # Both characters now on left side
     stewie_margin = 0  # Both characters now on left side
@@ -403,7 +459,7 @@ def create_video_with_audio_and_captions(
     stewie_keys = [k for k in character_images.keys() if k[0] == "STEWIE"]
     peter_keys = [k for k in character_images.keys() if k[0] == "PETER"]
     
-    overlay_count = 0
+    # overlay_count continues from the timeline overlay clips composited above
     
     # Overlay all Stewie emotions on bottom left
     for key in stewie_keys:
@@ -566,6 +622,11 @@ def create_video_with_audio_and_captions(
         "-i", audio_file,
     ]
     
+    # Timeline overlay clip inputs come immediately after the audio so they
+    # match the [2+] indices assigned when their scale filters were emitted
+    for clip_stream in clip_scaled_streams:
+        cmd.extend(["-loop", "1", "-i", clip_stream["path"]])
+
     # Add all character image inputs in the same order as we used them in filter_parts
     # The order here must match the order in which we created the scaled streams
     for key, image_path in character_images.items():
@@ -583,6 +644,9 @@ def create_video_with_audio_and_captions(
     print(f"Input [0]: Background video - {background_video}")
     print(f"Input [1]: Audio - {audio_file}")
     input_debug_idx = 2
+    for i, clip_stream in enumerate(clip_scaled_streams):
+        print(f"Input [{input_debug_idx}]: Timeline overlay clip {i} - {clip_stream['path']}")
+        input_debug_idx += 1
     for key, image_path in character_images.items():
         if image_path:
             speaker, emotion = key

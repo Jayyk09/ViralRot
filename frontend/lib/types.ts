@@ -72,13 +72,35 @@ export interface JobCreatedResponse {
 // ============ Transcript Types ============
 export type Speaker = "PETER" | "STEWIE";
 
-// =============== Image Configuration ====================
-export interface ImageConfig {
-    filename: string;
+// =============== Timeline Media ====================
+export interface MediaAsset {
+    id: string;
+    project_id?: string;
+    original_filename: string;
+    content_type: string;
+    byte_size: number;
+    width_px: number;
+    height_px: number;
+    status: "ready";
+    access_url: string;
+    created_at?: string;
+}
+
+export interface TimelineClip {
+    id: string;
+    project_id?: string;
+    asset_id: string;
+    start_ms: number;
+    end_ms: number;
     x: number;
     y: number;
     width: number;
-    presignedUrl?: string;
+    z_index: number;
+    revision: number;
+    authored_composition_id: string | null;
+    timing_status: "aligned" | "needs_review";
+    created_at?: string;
+    updated_at?: string;
 }
 
 export interface DialogueLine {
@@ -86,7 +108,6 @@ export interface DialogueLine {
     caption: string;
     speaker: Speaker;
     emotion?: "neutral" | "angry" | "excited" | "confused";
-    images?: ImageConfig[]; // Multiple simultaneous images
     line_number?: number;
     duration_estimate?: number;
 }
@@ -117,6 +138,9 @@ export interface EditorProject {
     revision: number;
     dialogue: EditorLineRecord[];
     active_composition: PersistedComposition | null;
+    can_restore_narrated_script?: boolean;
+    media_assets: MediaAsset[];
+    timeline_clips: TimelineClip[];
     exports: Array<{
         id: number;
         title: string;

@@ -24,6 +24,7 @@ export { CanvasRenderer } from "./CanvasRenderer";
 // Layers
 export { VideoLayer } from "./layers/VideoLayer";
 export { ImageOverlayLayer } from "./layers/ImageOverlayLayer";
+export { CharacterLayer } from "./layers/CharacterLayer";
 export { CaptionLayer } from "./layers/CaptionLayer";
 
 // Types
