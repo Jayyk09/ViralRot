@@ -1,386 +1,178 @@
 "use client";
 
-/**
- * ImageOverlayEditor
- * 
- * Unified overlay for managing images on the canvas preview.
- * Handles both newly added images and existing images with the same UX:
- * - Drag to reposition
- * - Corner handles to resize (aspect ratio locked)
- * - X button to delete
- * 
- * Position (x, y) represents the TOP-LEFT corner of the image,
- * matching the backend FFmpeg rendering behavior.
- */
-
-import { useState, useCallback, useRef, useEffect } from "react";
-import { ImageConfig } from "@/lib/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { MediaAsset, TimelineClip } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { X } from "lucide-react";
 
-// Canvas dimensions (9:16 aspect ratio)
-const CANVAS_WIDTH = 1080;
-const CANVAS_HEIGHT = 1920;
+const MIN_WIDTH = 0.1;
 
-// Debounce delay in ms
-const DEBOUNCE_MS = 300;
-
-// Size constraints
-const MIN_WIDTH = 80;
-const MAX_WIDTH = 900;
-const DEFAULT_WIDTH = 300;
+type Handle = "nw" | "ne" | "sw" | "se";
 
 interface ImageOverlayEditorProps {
-    /** Existing images for this line */
-    images: ImageConfig[];
-    /** Preview URLs map (filename -> blob URL) */
-    previewUrls: Map<string, string>;
-    /** New image being placed (if any) */
-    placingImage?: {
-        file: File;
-        previewUrl: string;
-    } | null;
-    /** Callback when new image is committed (auto-commits on add) */
-    onImagePlaced: (x: number, y: number, width: number) => void;
-    /** Callback when existing image position/size changes */
-    onUpdateImage: (imageIdx: number, updates: Partial<ImageConfig>) => void;
-    /** Callback when image is deleted */
-    onDeleteImage: (imageIdx: number) => void;
-    /** Callback when placement is cancelled (X on new image) */
-    onCancelPlacement?: () => void;
-    /** Additional class names */
-    className?: string;
+    clips: TimelineClip[];
+    assets: MediaAsset[];
+    selectedClipId: string | null;
+    onSelectClip: (clipId: string) => void;
+    onUpdateClip: (clipId: string, updates: Partial<TimelineClip>) => void;
 }
 
-export function ImageOverlayEditor({
-    images,
-    previewUrls,
-    placingImage,
-    onImagePlaced,
-    onUpdateImage,
-    onDeleteImage,
-    onCancelPlacement,
-    className,
-}: ImageOverlayEditorProps) {
+export function ImageOverlayEditor({ clips, assets, selectedClipId, onSelectClip, onUpdateClip }: ImageOverlayEditorProps) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const hasPlacedRef = useRef(false);
-
-    // When a new image is added, immediately place it at default position
-    useEffect(() => {
-        if (placingImage && !hasPlacedRef.current) {
-            hasPlacedRef.current = true;
-            // Place at center-ish position with default size
-            const defaultX = (CANVAS_WIDTH - DEFAULT_WIDTH) / 2;
-            const defaultY = CANVAS_HEIGHT / 3;
-            onImagePlaced(defaultX, defaultY, DEFAULT_WIDTH);
-        }
-    }, [placingImage, onImagePlaced]);
-
-    // Reset the placed ref when placingImage becomes null
-    useEffect(() => {
-        if (!placingImage) {
-            hasPlacedRef.current = false;
-        }
-    }, [placingImage]);
-
-    if (images.length === 0) return null;
+    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
 
     return (
-        <div 
-            ref={containerRef}
-            className={cn("absolute inset-0 z-5", className)}
-        >
-            {images.map((img, idx) => (
-                <DraggableImage
-                    key={`${img.filename}-${idx}`}
-                    image={img}
-                    previewUrl={previewUrls.get(img.filename)}
-                    containerRef={containerRef}
-                    onUpdate={(updates) => onUpdateImage(idx, updates)}
-                    onDelete={() => onDeleteImage(idx)}
-                />
-            ))}
+        <div ref={containerRef} className="pointer-events-none absolute inset-0 z-30">
+            {clips.map((clip) => {
+                const asset = assetById.get(clip.asset_id);
+                if (!asset) return null;
+                return (
+                    <EditableClip
+                        key={clip.id}
+                        clip={clip}
+                        asset={asset}
+                        selected={selectedClipId === clip.id}
+                        containerRef={containerRef}
+                        onSelect={() => onSelectClip(clip.id)}
+                        onCommit={(updates) => onUpdateClip(clip.id, updates)}
+                    />
+                );
+            })}
         </div>
     );
 }
 
-type ResizeHandle = "nw" | "ne" | "sw" | "se" | null;
-
-interface DraggableImageProps {
-    image: ImageConfig;
-    previewUrl?: string;
+function EditableClip({
+    clip,
+    asset,
+    selected,
+    containerRef,
+    onSelect,
+    onCommit,
+}: {
+    clip: TimelineClip;
+    asset: MediaAsset;
+    selected: boolean;
     containerRef: React.RefObject<HTMLDivElement | null>;
-    onUpdate: (updates: Partial<ImageConfig>) => void;
-    onDelete: () => void;
-}
+    onSelect: () => void;
+    onCommit: (updates: Partial<TimelineClip>) => void;
+}) {
+    const [draft, setDraft] = useState({ x: clip.x, y: clip.y, width: clip.width });
+    const draftRef = useRef(draft);
+    draftRef.current = draft;
+    const interaction = useRef<null | {
+        kind: "move" | "resize";
+        handle?: Handle;
+        clientX: number;
+        clientY: number;
+        start: typeof draft;
+    }>(null);
 
-function DraggableImage({ image, previewUrl, containerRef, onUpdate, onDelete }: DraggableImageProps) {
-    const url = previewUrl || image.presignedUrl;
-    const [isDragging, setIsDragging] = useState(false);
-    const [isResizing, setIsResizing] = useState<ResizeHandle>(null);
-    const [isHovered, setIsHovered] = useState(false);
-    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-    const [localPosition, setLocalPosition] = useState({ x: image.x, y: image.y });
-    const [localWidth, setLocalWidth] = useState(image.width);
-    const [imageAspect, setImageAspect] = useState(1);
-    
-    // Store initial state when starting resize
-    const resizeStartRef = useRef({ x: 0, y: 0, width: 0, mouseX: 0, mouseY: 0 });
-    
-    // Refs for debouncing
-    const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Load image aspect ratio
-    useEffect(() => {
-        if (!url) return;
-        const img = new Image();
-        img.onload = () => {
-            setImageAspect(img.width / img.height);
-        };
-        img.src = url;
-    }, [url]);
-    
-    // Sync with prop changes (only when not interacting)
-    useEffect(() => {
-        if (!isDragging && !isResizing) {
-            setLocalPosition({ x: image.x, y: image.y });
-            setLocalWidth(image.width);
-        }
-    }, [image.x, image.y, image.width, isDragging, isResizing]);
-
-    // Cleanup debounce timer on unmount
-    useEffect(() => {
-        return () => {
-            if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-            }
-        };
-    }, []);
-
-    // Commit updates to parent
-    const commitUpdates = useCallback((updates: Partial<ImageConfig>) => {
-        if (debounceTimerRef.current) {
-            clearTimeout(debounceTimerRef.current);
-            debounceTimerRef.current = null;
-        }
-        onUpdate(updates);
-    }, [onUpdate]);
-
-    const screenToCanvas = useCallback((clientX: number, clientY: number) => {
+    const canvasHeightForWidth = useCallback((width: number) => {
         const container = containerRef.current;
-        if (!container) return { x: 0, y: 0 };
-        
-        const rect = container.getBoundingClientRect();
-        const scaleX = CANVAS_WIDTH / rect.width;
-        const scaleY = CANVAS_HEIGHT / rect.height;
-        
-        return {
-            x: Math.round((clientX - rect.left) * scaleX),
-            y: Math.round((clientY - rect.top) * scaleY),
-        };
-    }, [containerRef]);
+        if (!container) return 0;
+        const screenAspectFactor = container.clientWidth / container.clientHeight;
+        return width * (asset.height_px / asset.width_px) * screenAspectFactor;
+    }, [asset.height_px, asset.width_px, containerRef]);
 
-    // --- Drag handlers ---
-    const handleMouseDown = useCallback((e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(true);
-        
-        const canvasPos = screenToCanvas(e.clientX, e.clientY);
-        setDragOffset({
-            x: canvasPos.x - localPosition.x,
-            y: canvasPos.y - localPosition.y,
-        });
-    }, [localPosition, screenToCanvas]);
-
-    const handleMouseMove = useCallback((e: MouseEvent) => {
-        if (isDragging) {
-            const canvasPos = screenToCanvas(e.clientX, e.clientY);
-            const newX = Math.max(0, Math.min(CANVAS_WIDTH - localWidth, canvasPos.x - dragOffset.x));
-            const newY = Math.max(0, Math.min(CANVAS_HEIGHT - 100, canvasPos.y - dragOffset.y));
-            setLocalPosition({ x: newX, y: newY });
-        } else if (isResizing) {
-            const canvasPos = screenToCanvas(e.clientX, e.clientY);
-            const start = resizeStartRef.current;
-            
-            // Calculate delta from start position
-            const deltaX = canvasPos.x - start.mouseX;
-            const deltaY = canvasPos.y - start.mouseY;
-            
-            let newWidth = start.width;
-            let newX = start.x;
-            let newY = start.y;
-            
-            // Resize based on which handle is being dragged
-            // Maintain aspect ratio by using the larger delta
-            const aspectDeltaFromX = Math.abs(deltaX);
-            const aspectDeltaFromY = Math.abs(deltaY) * imageAspect;
-            const useDeltaX = aspectDeltaFromX >= aspectDeltaFromY;
-            
-            switch (isResizing) {
-                case "se": // Bottom-right: grow/shrink, position stays
-                    if (useDeltaX) {
-                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + deltaX));
-                    } else {
-                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + deltaY * imageAspect));
-                    }
-                    break;
-                case "sw": // Bottom-left: width changes, x moves opposite
-                    if (useDeltaX) {
-                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width - deltaX));
-                        newX = start.x + (start.width - newWidth);
-                    } else {
-                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + deltaY * imageAspect));
-                        newX = start.x - (newWidth - start.width);
-                    }
-                    break;
-                case "ne": // Top-right: width changes, y moves opposite  
-                    if (useDeltaX) {
-                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + deltaX));
-                        const heightDelta = (newWidth - start.width) / imageAspect;
-                        newY = start.y - heightDelta;
-                    } else {
-                        const heightDelta = -deltaY;
-                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + heightDelta * imageAspect));
-                        newY = start.y + deltaY;
-                    }
-                    break;
-                case "nw": // Top-left: both position and size change
-                    if (useDeltaX) {
-                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width - deltaX));
-                        newX = start.x + (start.width - newWidth);
-                        const heightDelta = (newWidth - start.width) / imageAspect;
-                        newY = start.y - heightDelta;
-                    } else {
-                        const heightDelta = -deltaY;
-                        newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, start.width + heightDelta * imageAspect));
-                        newX = start.x - (newWidth - start.width);
-                        newY = start.y + deltaY;
-                    }
-                    break;
-            }
-            
-            // Clamp position
-            newX = Math.max(0, Math.min(CANVAS_WIDTH - newWidth, newX));
-            newY = Math.max(0, newY);
-            
-            setLocalPosition({ x: newX, y: newY });
-            setLocalWidth(newWidth);
-        }
-    }, [isDragging, isResizing, dragOffset, screenToCanvas, localWidth, imageAspect]);
-
-    const handleMouseUp = useCallback(() => {
-        if (isDragging || isResizing) {
-            // Commit all changes
-            commitUpdates({ x: localPosition.x, y: localPosition.y, width: localWidth });
-        }
-        setIsDragging(false);
-        setIsResizing(null);
-    }, [isDragging, isResizing, localPosition, localWidth, commitUpdates]);
-
-    // --- Resize handle handlers ---
-    const handleResizeStart = useCallback((e: React.MouseEvent, handle: ResizeHandle) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const canvasPos = screenToCanvas(e.clientX, e.clientY);
-        resizeStartRef.current = {
-            x: localPosition.x,
-            y: localPosition.y,
-            width: localWidth,
-            mouseX: canvasPos.x,
-            mouseY: canvasPos.y,
-        };
-        
-        setIsResizing(handle);
-    }, [localPosition, localWidth, screenToCanvas]);
-
-    // Global mouse events
     useEffect(() => {
-        if (isDragging || isResizing) {
-            window.addEventListener("mousemove", handleMouseMove);
-            window.addEventListener("mouseup", handleMouseUp);
-            return () => {
-                window.removeEventListener("mousemove", handleMouseMove);
-                window.removeEventListener("mouseup", handleMouseUp);
-            };
-        }
-    }, [isDragging, isResizing, handleMouseMove, handleMouseUp]);
-    
-    if (!url) return null;
+        if (!interaction.current) setDraft({ x: clip.x, y: clip.y, width: clip.width });
+    }, [clip.x, clip.y, clip.width]);
 
-    const showControls = isHovered || isDragging || isResizing;
-    const isInteracting = isDragging || isResizing;
+    const begin = (event: React.PointerEvent, kind: "move" | "resize", handle?: Handle) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelect();
+        interaction.current = { kind, handle, clientX: event.clientX, clientY: event.clientY, start: draft };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", end, { once: true });
+    };
+
+    const move = useCallback((event: PointerEvent) => {
+        const active = interaction.current;
+        const container = containerRef.current;
+        if (!active || !container) return;
+        const dx = (event.clientX - active.clientX) / container.clientWidth;
+        const dy = (event.clientY - active.clientY) / container.clientHeight;
+
+        if (active.kind === "move") {
+            const height = canvasHeightForWidth(active.start.width);
+            setDraft({
+                ...active.start,
+                x: Math.max(0, Math.min(1 - active.start.width, active.start.x + dx)),
+                y: Math.max(0, Math.min(1 - height, active.start.y + dy)),
+            });
+            return;
+        }
+
+        const handle = active.handle ?? "se";
+        const growsRight = handle === "ne" || handle === "se";
+        const heightFactor = canvasHeightForWidth(1);
+        const maxWidth = Math.min(1, heightFactor > 0 ? 1 / heightFactor : 1);
+        let width = Math.min(maxWidth, Math.max(MIN_WIDTH, active.start.width + (growsRight ? dx : -dx)));
+        let x = growsRight ? active.start.x : active.start.x + active.start.width - width;
+        x = Math.max(0, x);
+        width = Math.min(width, 1 - x);
+        const height = canvasHeightForWidth(width);
+        let y = handle === "nw" || handle === "ne"
+            ? active.start.y + canvasHeightForWidth(active.start.width) - height
+            : active.start.y;
+        y = Math.max(0, Math.min(1 - height, y));
+        setDraft({ x, y, width });
+    }, [canvasHeightForWidth, containerRef]);
+
+    const end = useCallback(() => {
+        window.removeEventListener("pointermove", move);
+        const active = interaction.current;
+        interaction.current = null;
+        const value = draftRef.current;
+        if (!active || (
+            value.x === active.start.x
+            && value.y === active.start.y
+            && value.width === active.start.width
+        )) return;
+        onCommit({
+            x: Number(value.x.toFixed(5)),
+            y: Number(value.y.toFixed(5)),
+            width: Number(value.width.toFixed(5)),
+        });
+    }, [move, onCommit]);
+
+    useEffect(() => () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+    }, [end, move]);
 
     return (
         <div
             className={cn(
-                "absolute pointer-events-auto",
-                isInteracting ? "z-20" : "z-10",
-                isDragging ? "cursor-grabbing" : "cursor-grab"
+                "pointer-events-auto absolute cursor-move touch-none",
+                selected && "ring-2 ring-white ring-offset-2 ring-offset-black/40",
             )}
             style={{
-                left: `${(localPosition.x / CANVAS_WIDTH) * 100}%`,
-                top: `${(localPosition.y / CANVAS_HEIGHT) * 100}%`,
-                width: `${(localWidth / CANVAS_WIDTH) * 100}%`,
+                left: `${draft.x * 100}%`,
+                top: `${draft.y * 100}%`,
+                width: `${draft.width * 100}%`,
+                aspectRatio: `${asset.width_px}/${asset.height_px}`,
             }}
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => !isInteracting && setIsHovered(false)}
-            onMouseDown={handleMouseDown}
+            onPointerDown={(event) => begin(event, "move")}
+            onClick={(event) => { event.stopPropagation(); onSelect(); }}
+            aria-label={`Visual clip ${asset.original_filename}`}
         >
-            <div className="relative w-full">
-                <img
-                    src={url}
-                    alt=""
-                    className={cn(
-                        "w-full h-auto rounded",
-                        showControls ? "ring-2 ring-primary shadow-xl" : ""
-                    )}
-                    draggable={false}
-                />
-                
-                {/* Delete button - top left corner */}
+            {/* The canvas owns image rendering below characters/captions. This transparent hit target owns editing only. */}
+            {selected && (["nw", "ne", "sw", "se"] as Handle[]).map((handle) => (
                 <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete();
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
+                    key={handle}
+                    type="button"
+                    aria-label={`Resize ${handle}`}
+                    onPointerDown={(event) => begin(event, "resize", handle)}
                     className={cn(
-                        "absolute -top-2 -left-2 p-1 rounded-full bg-destructive hover:bg-destructive/90 transition-all shadow-lg z-10",
-                        showControls ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
+                        "absolute h-3 w-3 rounded-[3px] border-2 border-black bg-white shadow",
+                        handle.includes("n") ? "-top-1.5" : "-bottom-1.5",
+                        handle.includes("w") ? "-left-1.5" : "-right-1.5",
+                        handle === "nw" || handle === "se" ? "cursor-nwse-resize" : "cursor-nesw-resize",
                     )}
-                    title="Delete image"
-                >
-                    <X className="w-3 h-3 text-destructive-foreground" />
-                </button>
-
-                {/* Resize handles - corners */}
-                {showControls && (
-                    <>
-                        {/* Top-left */}
-                        <div
-                            className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-primary-foreground border-2 border-primary rounded-sm cursor-nw-resize shadow"
-                            onMouseDown={(e) => handleResizeStart(e, "nw")}
-                        />
-                        {/* Top-right */}
-                        <div
-                            className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-primary-foreground border-2 border-primary rounded-sm cursor-ne-resize shadow"
-                            onMouseDown={(e) => handleResizeStart(e, "ne")}
-                        />
-                        {/* Bottom-left */}
-                        <div
-                            className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-primary-foreground border-2 border-primary rounded-sm cursor-sw-resize shadow"
-                            onMouseDown={(e) => handleResizeStart(e, "sw")}
-                        />
-                        {/* Bottom-right */}
-                        <div
-                            className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-primary-foreground border-2 border-primary rounded-sm cursor-se-resize shadow"
-                            onMouseDown={(e) => handleResizeStart(e, "se")}
-                        />
-                    </>
-                )}
-            </div>
+                />
+            ))}
         </div>
     );
 }
