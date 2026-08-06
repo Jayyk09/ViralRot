@@ -76,19 +76,29 @@ def get_background_video_from_storage(video: Optional[str]) -> Path:
     prefix = os.getenv("R2_BACKGROUND_PREFIX", "").strip("/")
     if prefix:
         prefix += "/"
-    keys = [k for k in list_asset_keys(prefix) if k.lower().endswith(".mp4")]
+    keys = [
+        key
+        for key in list_asset_keys(prefix)
+        if key.lower().endswith(".mp4") and (prefix or "/" not in key)
+    ]
 
     if not keys:
         location = f" under '{prefix}'" if prefix else " at the bucket root"
         raise FileNotFoundError(f"No background videos found in storage{location}")
 
-    if video:
-        matching = [k for k in keys if video in Path(k).name.lower()]
-    else:
-        matching = []
+    if not video:
+        raise ValueError("A background video must be selected")
 
-    selected_key = matching[0] if matching else random.choice(keys)
-    return get_asset(selected_key)
+    normalized_id = video.strip().lower()
+    matching = [
+        key
+        for key in keys
+        if Path(key).stem.lower() == normalized_id
+        or Path(key).name.lower() == normalized_id
+    ]
+    if not matching:
+        raise FileNotFoundError(f"Unknown background video: {video}")
+    return get_asset(matching[0])
 
 
 def load_dialogue(path: Path) -> Dict[str, Any]:
@@ -238,7 +248,7 @@ def generate_audio_for_dialogue(
         output_dir=str(segment_dir),
     )
 
-    audio_output = audio_dir / f"{slug}_full.mp3"
+    audio_output = audio_dir / f"{slug}_full.wav"
     print("🔗 Concatenating audio segments…")
     return concatenate_audio_segments(
         audio_segments,

@@ -11,7 +11,7 @@ Usage:
     storage.upload(file_obj, "user_1/video.mp4", {"content_type": "video/mp4"})
     url = storage.generate_url("user_1/video.mp4")
 """
-from .factory import get_storage_backend
+from .factory import get_background_storage_backend, get_storage_backend
 from .base import StorageBackend
 
-__all__ = ["get_storage_backend", "StorageBackend"]
+__all__ = ["get_background_storage_backend", "get_storage_backend", "StorageBackend"]

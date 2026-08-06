@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import List
 
-from .factory import get_storage_backend
+from .factory import get_background_storage_backend
 
 _DEFAULT_CACHE_DIR = Path(__file__).resolve().parent.parent / "tmp" / "asset_cache"
 
@@ -35,7 +35,7 @@ def get_asset(key: str) -> Path:
         return cached
 
     cached.parent.mkdir(parents=True, exist_ok=True)
-    storage = get_storage_backend()
+    storage = get_background_storage_backend()
 
     # Download to a temp name, then rename, so a failed download
     # never leaves a truncated file in the cache
@@ -53,5 +53,5 @@ def get_asset(key: str) -> Path:
 
 def list_asset_keys(prefix: str) -> List[str]:
     """List all storage keys under a prefix."""
-    storage = get_storage_backend()
+    storage = get_background_storage_backend()
     return list(storage.iter_keys(prefix))
