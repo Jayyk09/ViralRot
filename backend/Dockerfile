@@ -27,5 +27,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run with uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Apply the idempotent additive migration before code that reads clip origin.
+# Fresh local databases receive the complete schema from docker-compose init mounts;
+# existing databases are upgraded here before the API accepts traffic.
+CMD ["sh", "-c", "python scripts/migrate_timeline_clip_origin.py && exec uvicorn main:app --host 0.0.0.0 --port 8000"]
