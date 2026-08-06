@@ -52,6 +52,31 @@ def get_asset(key: str) -> Path:
 
 
 def list_asset_keys(prefix: str) -> List[str]:
-    """List all storage keys under a prefix."""
+    """List all reusable asset keys under a background-storage prefix."""
     storage = get_background_storage_backend()
     return list(storage.iter_keys(prefix))
+
+
+def get_background_video(video_id: str) -> Path:
+    """Resolve one exact reusable background ID to a cached local MP4 path."""
+    normalized_id = video_id.strip().lower()
+    if not normalized_id:
+        raise ValueError("A background video must be selected")
+
+    prefix = os.getenv("R2_BACKGROUND_PREFIX", "").strip("/")
+    if prefix:
+        prefix += "/"
+    keys = [
+        key
+        for key in list_asset_keys(prefix)
+        if key.lower().endswith(".mp4") and (prefix or "/" not in key)
+    ]
+    matching = [
+        key
+        for key in keys
+        if Path(key).stem.lower() == normalized_id
+        or Path(key).name.lower() == normalized_id
+    ]
+    if not matching:
+        raise FileNotFoundError(f"Unknown background video: {video_id}")
+    return get_asset(matching[0])

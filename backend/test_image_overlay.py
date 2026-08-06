@@ -12,7 +12,7 @@ Usage:
 
 Config file format (JSON):
 {
-  "audio_file": "assets/audio/generated/collection_xxx/dialogue_title.mp3",
+  "audio_file": "assets/audio/generated/editor/project_id/narration.wav",
   "background_video": "assets/videos/minecraft.mp4",
   "output_file": "tmp/test_videos/test_output.mp4",
   "dialogue": [

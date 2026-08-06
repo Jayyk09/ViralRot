@@ -159,6 +159,14 @@ $$;
 ALTER TABLE videos
     ALTER COLUMN editor_project_id SET NOT NULL;
 
+-- Project ownership is the only export relationship. These columns/tables
+-- belonged to the removed collection/account-wide video integration.
+ALTER TABLE videos
+    DROP COLUMN IF EXISTS collection_id,
+    DROP COLUMN IF EXISTS user_id;
+
+DROP TABLE IF EXISTS collections;
+
 CREATE INDEX IF NOT EXISTS idx_videos_editor_project_created
     ON videos(editor_project_id, created_at DESC);
 

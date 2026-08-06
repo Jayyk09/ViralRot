@@ -145,7 +145,7 @@ class VideoJobProgress(BaseModel):
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
     generation_error: Optional[GenerationErrorPayload] = None
-    result: Optional[dict] = None  # Contains collection_id + video info
+    result: Optional[dict] = None  # Contains exported video information
     
     @property
     def percentage(self) -> int:

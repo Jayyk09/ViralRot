@@ -21,8 +21,7 @@ from services.media_service import (
     MediaAssetService,
     MediaValidationError,
 )
-from services.video_service import VideoService, get_collection_videos
-from services.collection_service import create_collection, get_collection, get_user_collections, find_last_collection
+from services.video_service import VideoService
 from services.progress_service import ProgressService, set_event_loop
 from services.generation_errors import GenerationError, InvalidProviderOutputError
 from services.grok_dialogue_service import GrokDialogueService, create_xai_responses_client
@@ -48,8 +47,8 @@ from services.repositories.editor_repository import (
 )
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
-from backend_pipeline.generate_video import get_background_video_from_storage
 from backend_pipeline.video_assembly.ffMpeg import create_video_with_audio_and_captions
+from storage.assets import get_background_video
 
 from storage.factory import get_background_storage_backend, get_storage_backend
 
@@ -1441,8 +1440,10 @@ async def _process_project_video_job(
 # ============ Helper Functions ============
 
 def _resolve_background_video(video: Optional[str]) -> Path:
-    """Download the selected background video from R2 for FFmpeg."""
-    return get_background_video_from_storage(video)
+    """Download the selected reusable background video for FFmpeg."""
+    if not video:
+        raise ValueError("A background video must be selected")
+    return get_background_video(video)
 
 
 def _extract_subtopic_number(video: dict) -> int:
@@ -1473,8 +1474,8 @@ async def list_user_videos(
 ):
     """Return every export owned by the current user, newest first.
 
-    Persistent editor exports are intentionally valid without a legacy
-    collection, so the feed must paginate videos directly.
+    Persistent editor exports belong to editor projects, so the feed paginates
+    the current user's exported videos directly.
     """
     try:
         video_service = VideoService()
@@ -1489,8 +1490,7 @@ async def list_user_videos(
         {
             k: v
             for k, v in video.items()
-            if k not in {"storage_key", "s3_key", "user_id"}
-            and not (k == "collection_id" and v is None)
+            if k not in {"storage_key", "s3_key"}
         }
         for video in videos
     ]
@@ -1502,80 +1502,6 @@ async def list_user_videos(
         "videos": sanitized_videos,
     }
 
-
-# ============ Collection Endpoints ============
-
-@app.get("/collections")
-async def list_user_collections(
-    start: int = Query(0, ge=0, description="Offset into collections list"),
-    limit: int = Query(10, ge=1, le=50, description="Number of collections to return"),
-    user_id: int = Depends(get_current_user_id),
-):
-    """
-    List all collections for the current user.
-    Returns ONLY: id and collection_title for each collection.
-    """
-    try:
-        raw_collections = await _run_blocking(
-            get_user_collections,
-            user_id,
-            start,
-            limit,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    collections = [
-        {
-            "id": c["id"],
-            "title": c["collection_title"],
-        }
-        for c in raw_collections
-    ]
-
-    return {
-        "collections": collections,
-    }
-
-
-@app.get("/collections/{collection_id}")
-async def get_collection_details(
-    collection_id: int,
-    user_id: int = Depends(get_current_user_id),
-):
-    """
-    Get a specific collection with all its videos.
-    Videos are ordered by subtopic number (1→n).
-    """
-    try:
-        # Get collection metadata
-        collection = await _run_blocking(get_collection, collection_id)
-        if not collection:
-            raise HTTPException(status_code=404, detail="Collection not found")
-
-        # Verify ownership
-        if collection["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this collection")
-
-        # Get all videos in the collection
-        videos = await _run_blocking(get_collection_videos, collection_id)
-
-        # Strip out any internal-only fields like s3_key
-        sanitized_videos = [
-            {k: v for k, v in video.items() if k != "s3_key" and k != "collection_id"}
-            for video in videos
-        ]
-
-        return {
-            "id": collection["id"],
-            "title": collection["collection_title"],
-            "video_count": len(sanitized_videos),
-            "videos": sanitized_videos,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/videos/urls")
 async def get_video_urls():

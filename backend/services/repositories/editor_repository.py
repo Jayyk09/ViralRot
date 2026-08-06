@@ -239,7 +239,6 @@ class EditorRepository:
                       ON line.project_id = project.id
                     LEFT JOIN videos AS video
                       ON video.editor_project_id = project.id
-                     AND video.user_id = project.user_id
                     WHERE project.user_id = %s
                     GROUP BY project.id
                     ORDER BY project.updated_at DESC, project.id DESC
@@ -1376,10 +1375,10 @@ class EditorRepository:
             """
             SELECT id, s3_key AS storage_key, video_title AS title, created_at
             FROM videos
-            WHERE editor_project_id = %s AND user_id = %s
+            WHERE editor_project_id = %s
             ORDER BY created_at DESC
             """,
-            (project_id, user_id),
+            (project_id,),
         )
         result["exports"] = [dict(row) for row in cur.fetchall()]
         cur.execute(
