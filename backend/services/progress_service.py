@@ -11,17 +11,43 @@ Supports two job types:
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, List, Literal, Optional, Set, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Union
 from uuid import uuid4
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import threading
 
+from services.generation_errors import GenerationError
+
 # Type definitions
-JobType = Literal["transcript_generation", "video_generation", "audio_generation"]
-JobStatus = Literal["queued", "processing", "completed", "failed"]
+JobType = Literal[
+    "transcript_generation", "video_generation", "audio_generation", "visual_generation"
+]
+JobStatus = Literal[
+    "queued", "processing", "awaiting_review", "completed", "failed", "cancelled"
+]
 TranscriptStage = Literal["extracting_content", "generating_dialogue"]
 VideoStage = Literal["preparing_assets", "audio_generation", "video_assembly", "uploading"]
 AudioStage = Literal["tts_generation", "concatenation", "uploading"]
+VisualStage = Literal[
+    "capturing_narration",
+    "planning",
+    "searching_images",
+    "awaiting_review",
+    "retrieving_images",
+    "placing_visuals",
+    "cancelling",
+]
+VisualSlotStatus = Literal[
+    "planned",
+    "searching",
+    "awaiting_review",
+    "retrieving",
+    "ingested",
+    "placed",
+    "skipped_manual_overlap",
+    "skipped_by_user",
+    "failed",
+]
 
 # ============ Event Loop Storage ============
 # Store reference to main event loop for thread-safe operations
@@ -43,6 +69,35 @@ def set_event_loop(loop: asyncio.AbstractEventLoop) -> None:
 
 # ============ Pydantic Models ============
 
+
+class GenerationErrorPayload(BaseModel):
+    """Stable, provider-independent failure information exposed to job clients."""
+
+    code: str
+    message: str
+    retry_action: str
+
+
+class VisualSlotView(BaseModel):
+    """Client-safe view of one transient visual slot.
+
+    Candidate dicts already exclude the original third-party URL (see
+    ReviewImageCandidate.to_dict()); only an opaque, server-verified token
+    authorizes a later placement selection.
+    """
+
+    slot_id: str
+    start_line_id: str
+    end_line_id: str
+    start_ms: int
+    end_ms: int
+    query: str
+    status: VisualSlotStatus
+    candidates: List[Dict[str, Any]] = Field(default_factory=list)
+    asset_id: Optional[str] = None
+    error: Optional[GenerationErrorPayload] = None
+
+
 class TranscriptJobProgress(BaseModel):
     """Progress state for transcript generation job."""
     job_id: str
@@ -53,6 +108,7 @@ class TranscriptJobProgress(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
+    generation_error: Optional[GenerationErrorPayload] = None
     result: Optional[dict] = None  # Contains transcript_id + transcript JSON
     
     @property
@@ -88,6 +144,7 @@ class VideoJobProgress(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
+    generation_error: Optional[GenerationErrorPayload] = None
     result: Optional[dict] = None  # Contains collection_id + video info
     
     @property
@@ -137,6 +194,7 @@ class AudioJobProgress(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
+    generation_error: Optional[GenerationErrorPayload] = None
     result: Optional[dict] = None  # Contains audio_url, line_timings, word_timestamps, background_video_url
 
     @property
@@ -172,6 +230,74 @@ class AudioJobProgress(BaseModel):
         return stage_msg
 
 
+class VisualJobProgress(BaseModel):
+    """Progress state for a transient post-narration visual-generation run."""
+    job_id: str
+    user_id: int
+    job_type: Literal["visual_generation"] = "visual_generation"
+    status: JobStatus = "queued"
+    mode: Literal["automatic", "review"] = "automatic"
+    current_stage: VisualStage = "capturing_narration"
+    project_id: str
+    composition_id: Optional[str] = None
+    dialogue_title: Optional[str] = None
+    retry_of_job_id: Optional[str] = None
+    slots: List[VisualSlotView] = Field(default_factory=list)
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    generation_error: Optional[GenerationErrorPayload] = None
+    result: Optional[dict] = None
+
+    @property
+    def percentage(self) -> int:
+        if self.status == "completed":
+            return 100
+        if self.status in ("failed", "cancelled"):
+            return 0
+        if not self.slots:
+            stage_order = ["capturing_narration", "planning"]
+            if self.current_stage in stage_order:
+                return min(20, (stage_order.index(self.current_stage) + 1) * 10)
+            return 5
+        settled = sum(
+            1
+            for slot in self.slots
+            if slot.status
+            in ("placed", "failed", "skipped_manual_overlap", "skipped_by_user", "ingested")
+        )
+        return min(99, 20 + int((settled / len(self.slots)) * 79))
+
+    @property
+    def message(self) -> str:
+        if self.status == "completed":
+            return "Visual generation complete!"
+        if self.status == "cancelled":
+            return "Visual generation was cancelled."
+        if self.status == "failed":
+            return f"Failed: {self.error}"
+        if self.status == "awaiting_review":
+            return "Review the suggested visuals."
+        stage_messages = {
+            "capturing_narration": "Reading the finalized narration...",
+            "planning": "Planning useful visuals...",
+            "searching_images": "Finding images...",
+            "retrieving_images": "Fetching images...",
+            "placing_visuals": "Placing visuals on the timeline...",
+            "cancelling": "Cancelling...",
+        }
+        base = stage_messages.get(self.current_stage, self.current_stage)
+        if self.slots and self.current_stage in ("searching_images", "retrieving_images"):
+            settled = sum(
+                1
+                for slot in self.slots
+                if slot.status
+                in ("placed", "failed", "skipped_manual_overlap", "skipped_by_user", "ingested")
+            )
+            return f"{base} · {settled}/{len(self.slots)}"
+        return base
+
+
 # DEPRECATED: Kept for backward compatibility
 class SubtopicProgress(BaseModel):
     """DEPRECATED: Progress for a single subtopic in video generation."""
@@ -183,7 +309,7 @@ class SubtopicProgress(BaseModel):
 
 class ProgressUpdate(BaseModel):
     """WebSocket message format for progress updates."""
-    type: Literal["progress", "completed", "error"]
+    type: Literal["progress", "completed", "error", "cancelled"]
     job_id: str
     job_type: JobType
     status: JobStatus
@@ -191,16 +317,25 @@ class ProgressUpdate(BaseModel):
     message: str
     current_stage: Optional[str] = None
     dialogue_title: Optional[str] = None  # For single dialogue video jobs
+    # Visual-generation-specific fields (absent for other job types)
+    mode: Optional[Literal["automatic", "review"]] = None
+    project_id: Optional[str] = None
+    composition_id: Optional[str] = None
+    retry_of_job_id: Optional[str] = None
+    slots: Optional[List[VisualSlotView]] = None
     # Deprecated fields (kept for backward compatibility)
     current_subtopic: Optional[int] = None
     total_subtopics: Optional[int] = None
     subtopic_title: Optional[str] = None
     result: Optional[dict] = None
     error: Optional[str] = None
+    generation_error: Optional[GenerationErrorPayload] = None
 
 
 # Union type for storage
-JobProgress = Union[TranscriptJobProgress, VideoJobProgress, AudioJobProgress]
+JobProgress = Union[
+    TranscriptJobProgress, VideoJobProgress, AudioJobProgress, VisualJobProgress
+]
 
 
 # ============ In-Memory Storage ============
@@ -209,6 +344,7 @@ PROGRESS_STORAGE: Dict[str, JobProgress] = {}
 WEBSOCKET_CONNECTIONS: Dict[str, Set] = {}  # job_id -> Set[WebSocket]
 STORAGE_LOCK = threading.Lock()
 PROGRESS_TTL = timedelta(hours=1)
+_UNSET = object()
 
 
 # ============ Progress Service ============
@@ -282,6 +418,33 @@ class ProgressService:
         return job_id
 
     @staticmethod
+    def create_visual_job(
+        user_id: int,
+        project_id: str,
+        mode: Literal["automatic", "review"],
+        dialogue_title: Optional[str] = None,
+        retry_of_job_id: Optional[str] = None,
+    ) -> str:
+        """Create a new transient post-narration visual-generation job."""
+        job_id = uuid4().hex
+
+        job = VisualJobProgress(
+            job_id=job_id,
+            user_id=user_id,
+            project_id=project_id,
+            mode=mode,
+            dialogue_title=dialogue_title,
+            retry_of_job_id=retry_of_job_id,
+            created_at=datetime.now(),
+        )
+
+        with STORAGE_LOCK:
+            PROGRESS_STORAGE[job_id] = job
+            WEBSOCKET_CONNECTIONS[job_id] = set()
+
+        return job_id
+
+    @staticmethod
     def get_job(job_id: str) -> Optional[JobProgress]:
         """Retrieve job progress by ID."""
         with STORAGE_LOCK:
@@ -294,6 +457,9 @@ class ProgressService:
         current_stage: Optional[str] = None,
         error: Optional[str] = None,
         result: Optional[dict] = None,
+        generation_error: Optional[dict] = None,
+        composition_id: Any = _UNSET,
+        slots: Any = _UNSET,
         # Deprecated parameters for backward compatibility
         current_subtopic: Optional[int] = None,
         subtopic_title: Optional[str] = None,
@@ -318,14 +484,27 @@ class ProgressService:
                 job.error = error
             if result:
                 job.result = result
+            if generation_error is not None:
+                job.generation_error = GenerationErrorPayload.model_validate(
+                    generation_error
+                )
             
             # Update video/audio-specific fields for single dialogue
             if isinstance(job, (VideoJobProgress, AudioJobProgress)):
                 if title:
                     job.dialogue_title = title
+
+            if isinstance(job, VisualJobProgress):
+                if composition_id is not _UNSET:
+                    job.composition_id = composition_id
+                if slots is not _UNSET:
+                    job.slots = [
+                        slot if isinstance(slot, VisualSlotView) else VisualSlotView.model_validate(slot)
+                        for slot in (slots or [])
+                    ]
             
             # Mark completion time
-            if status in ("completed", "failed"):
+            if status in ("completed", "failed", "cancelled"):
                 job.completed_at = datetime.now()
             
             # Build update message
@@ -333,6 +512,34 @@ class ProgressService:
         
         # Broadcast to WebSocket clients (outside lock to avoid deadlock)
         ProgressService._schedule_broadcast(job_id, update)
+
+    @staticmethod
+    def fail_job(
+        job_id: str, error: GenerationError, result: Optional[dict] = None
+    ) -> None:
+        """Fail a job with both the legacy message and stable error envelope.
+
+        ``result`` is set in the same broadcast as ``status`` (never a
+        follow-up call), so no client can observe a settled status with a
+        still-null result.
+        """
+
+        envelope = error.to_dict()
+        ProgressService.update_job(
+            job_id=job_id,
+            status="failed",
+            error=envelope["message"],
+            generation_error=envelope,
+            result=result,
+        )
+
+    @staticmethod
+    def cancel_job(job_id: str) -> None:
+        """Mark a job cancelled - distinct from failed, and never retryable."""
+        ProgressService.update_job(
+            job_id=job_id,
+            status="cancelled",
+        )
     
     @staticmethod
     def _schedule_broadcast(job_id: str, update: ProgressUpdate) -> None:
@@ -370,6 +577,8 @@ class ProgressService:
             msg_type = "completed"
         elif job.status == "failed":
             msg_type = "error"
+        elif job.status == "cancelled":
+            msg_type = "cancelled"
         else:
             msg_type = "progress"
         
@@ -377,7 +586,17 @@ class ProgressService:
         dialogue_title = None
         if isinstance(job, (VideoJobProgress, AudioJobProgress)):
             dialogue_title = job.dialogue_title
-        
+
+        visual_fields: Dict[str, Any] = {}
+        if isinstance(job, VisualJobProgress):
+            visual_fields = {
+                "mode": job.mode,
+                "project_id": job.project_id,
+                "composition_id": job.composition_id,
+                "retry_of_job_id": job.retry_of_job_id,
+                "slots": job.slots,
+            }
+
         return ProgressUpdate(
             type=msg_type,
             job_id=job.job_id,
@@ -388,7 +607,11 @@ class ProgressService:
             current_stage=job.current_stage,
             dialogue_title=dialogue_title,  # Changed from subtopic fields
             result=job.result if job.status == "completed" else None,
-            error=job.error if job.status == "failed" else None,
+            error=job.error if job.status in ("failed", "cancelled") else None,
+            generation_error=(
+                job.generation_error if job.status == "failed" else None
+            ),
+            **visual_fields,
         )
     
     @staticmethod
