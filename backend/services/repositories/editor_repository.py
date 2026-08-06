@@ -41,6 +41,18 @@ class EditorClipValidationError(Exception):
     """Raised when clip timing or geometry is invalid for the timeline."""
 
 
+class EditorStaleCompositionError(EditorRevisionConflictError):
+    """Raised when visual work targets a composition that is no longer active."""
+
+
+class EditorTimelineOverlapError(EditorClipValidationError):
+    """Raised when generated replacement placements overlap one another."""
+
+
+class EditorVisualLifecycleError(Exception):
+    """Raised when an invalid generated-visual lifecycle transition is requested."""
+
+
 class MediaAssetLimitError(Exception):
     """Raised when a project has reached its media asset quota."""
 
@@ -55,9 +67,22 @@ class MediaAssetInUseError(Exception):
         )
 
 
+class GeneratedTimelinePlacement(TypedDict):
+    """A successfully ingested visual ready for fixed timeline placement."""
+
+    asset_id: UUID
+    start_ms: int
+    end_ms: int
+
+
 # Geometry tolerance: the editor clamps interactively, so only float rounding
 # should ever push x + width past 1.
 _GEOMETRY_EPSILON = 0.001
+_MAX_MEDIA_ASSETS_PER_PROJECT = 20
+_GENERATED_MAX_FRAME_WIDTH = 0.6
+_GENERATED_TOP_MARGIN = 0.05
+_OUTPUT_WIDTH_PX = 1080
+_OUTPUT_HEIGHT_PX = 1920
 
 
 def clamp_clip_window(start_ms: int, end_ms: int, duration_ms: int) -> tuple:
@@ -112,6 +137,38 @@ def validate_z_index(z_index: int) -> None:
         raise EditorClipValidationError("z_index must be between -1000 and 1000")
 
 
+def generated_clip_geometry(
+    asset_width_px: int, asset_height_px: int
+) -> tuple[float, float, float]:
+    """Return the fixed top-anchored geometry used by generated visuals.
+
+    Generated images preserve their intrinsic aspect ratio, occupy at most 60%
+    of the output width, and shrink further when needed to fit the full height.
+
+    Horizontally centered, but anchored near the top rather than the exact
+    vertical center: captions (both box and karaoke) always render at the
+    frame's vertical center, so a dead-centered image would sit directly
+    behind the caption text. A top margin keeps most images clear of that
+    band; only an image tall enough to fill the whole frame height (no room
+    left above) still reaches it, which is an unavoidable physical overlap
+    rather than a placement choice.
+    """
+    if asset_width_px <= 0 or asset_height_px <= 0:
+        raise EditorClipValidationError("Asset dimensions must be positive")
+
+    width_to_fit_height = (
+        (asset_width_px / asset_height_px) * (_OUTPUT_HEIGHT_PX / _OUTPUT_WIDTH_PX)
+    )
+    width = min(_GENERATED_MAX_FRAME_WIDTH, width_to_fit_height)
+    height = width * (asset_height_px / asset_width_px) * (
+        _OUTPUT_WIDTH_PX / _OUTPUT_HEIGHT_PX
+    )
+    x = (1.0 - width) / 2.0
+    y = min(_GENERATED_TOP_MARGIN, max(0.0, 1.0 - height))
+    validate_clip_geometry(x, y, width, asset_width_px, asset_height_px)
+    return x, y, width
+
+
 class EditorRepository:
     """Store and retrieve editor projects using short, explicit transactions."""
 
@@ -159,6 +216,37 @@ class EditorRepository:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 return self._get_project(cur, project_id, user_id, required=False)
+        finally:
+            conn.close()
+
+    def list_projects(
+        self, user_id: int, offset: int = 0, limit: int = 50
+    ) -> List[Dict[str, object]]:
+        """List lightweight summaries for projects owned by one user."""
+        conn = get_db_conn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT project.id, project.title, project.background_video_id,
+                           project.revision, project.created_at, project.updated_at,
+                           (project.active_composition_id IS NOT NULL) AS narration_ready,
+                           COUNT(DISTINCT line.id)::integer AS dialogue_count,
+                           COUNT(DISTINCT video.id)::integer AS export_count,
+                           MAX(video.created_at) AS latest_export_at
+                    FROM editor_projects AS project
+                    LEFT JOIN dialogue_lines AS line
+                      ON line.project_id = project.id
+                    LEFT JOIN videos AS video
+                      ON video.editor_project_id = project.id
+                    WHERE project.user_id = %s
+                    GROUP BY project.id
+                    ORDER BY project.updated_at DESC, project.id DESC
+                    OFFSET %s LIMIT %s
+                    """,
+                    (user_id, offset, limit),
+                )
+                return [dict(row) for row in cur.fetchall()]
         finally:
             conn.close()
 
@@ -472,6 +560,279 @@ class EditorRepository:
     # narration regeneration for a purely visual edit).
     # ------------------------------------------------------------------
 
+    def capture_active_composition(
+        self, project_id: UUID, user_id: int
+    ) -> Dict[str, object]:
+        """Capture the owned project's active narration for visual planning.
+
+        The returned composition id is the concurrency token for every later
+        visual-generation step. Its manifest contains the finalized ordered
+        captions and timing boundaries used to resolve planner line indexes.
+        """
+        conn = get_db_conn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT project.id AS project_id, project.title,
+                           project.revision AS project_revision,
+                           composition.id AS composition_id,
+                           composition.duration_ms,
+                           composition.line_manifest
+                    FROM editor_projects AS project
+                    LEFT JOIN audio_compositions AS composition
+                      ON composition.id = project.active_composition_id
+                    WHERE project.id = %s AND project.user_id = %s
+                    """,
+                    (project_id, user_id),
+                )
+                snapshot = cur.fetchone()
+                if snapshot is None:
+                    raise EditorProjectNotFoundError("Editor project not found")
+                if snapshot["composition_id"] is None:
+                    raise EditorCompositionRequiredError(
+                        "Generate narration before planning visuals"
+                    )
+                result = dict(snapshot)
+                result["line_manifest"] = result["line_manifest"] or []
+                return result
+        finally:
+            conn.close()
+
+    def verify_active_composition(
+        self,
+        project_id: UUID,
+        user_id: int,
+        expected_composition_id: UUID,
+    ) -> Dict[str, object]:
+        """Verify a captured composition is still active and return its snapshot."""
+        try:
+            snapshot = self.capture_active_composition(project_id, user_id)
+        except EditorCompositionRequiredError as exc:
+            raise EditorStaleCompositionError(
+                "The active narration changed while visuals were generating"
+            ) from exc
+        if snapshot["composition_id"] != expected_composition_id:
+            raise EditorStaleCompositionError(
+                "The active narration changed while visuals were generating"
+            )
+        return snapshot
+
+    def preflight_media_asset_quota(
+        self, project_id: UUID, user_id: int, required_assets: int
+    ) -> int:
+        """Require capacity for an ingestion batch and return remaining capacity.
+
+        This is deliberately a preflight rather than a reservation. Each later
+        asset insert still enforces the quota while holding the project lock.
+        """
+        if required_assets < 0:
+            raise EditorVisualLifecycleError("required_assets cannot be negative")
+
+        conn = get_db_conn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT id FROM editor_projects WHERE id = %s AND user_id = %s",
+                    (project_id, user_id),
+                )
+                if cur.fetchone() is None:
+                    raise EditorProjectNotFoundError("Editor project not found")
+                cur.execute(
+                    "SELECT COUNT(*) AS count FROM media_assets WHERE project_id = %s",
+                    (project_id,),
+                )
+                current_count = int(cur.fetchone()["count"])
+                available = max(0, _MAX_MEDIA_ASSETS_PER_PROJECT - current_count)
+                if required_assets > available:
+                    raise MediaAssetLimitError(
+                        f"Project has capacity for {available} more image(s), "
+                        f"but {required_assets} are required"
+                    )
+                return available
+        finally:
+            conn.close()
+
+    def get_manual_timeline_occupancy(
+        self, project_id: UUID, user_id: int
+    ) -> List[Dict[str, object]]:
+        """Return current half-open time ranges occupied by owned manual clips."""
+        conn = get_db_conn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT id FROM editor_projects WHERE id = %s AND user_id = %s",
+                    (project_id, user_id),
+                )
+                if cur.fetchone() is None:
+                    raise EditorProjectNotFoundError("Editor project not found")
+                return self._manual_timeline_occupancy(cur, project_id)
+        finally:
+            conn.close()
+
+    def replace_generated_timeline_clips(
+        self,
+        project_id: UUID,
+        user_id: int,
+        expected_composition_id: UUID,
+        placements: List[GeneratedTimelinePlacement],
+    ) -> Dict[str, object]:
+        """Atomically replace every still-generated clip after a successful run.
+
+        The caller must not invoke this for an empty plan, cancellation, or total
+        ingestion failure. Manual clips and all media assets survive. Placements
+        newly overlapping a manual clip are omitted, while the successful asset
+        remains in the project media library.
+        """
+        normalized = self._normalize_generated_placements(placements)
+        if not normalized:
+            raise EditorVisualLifecycleError(
+                "Generated clip replacement requires at least one successful placement"
+            )
+        self._validate_generated_placement_overlaps(normalized)
+
+        conn = get_db_conn()
+        try:
+            with conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    # This project row lock serializes composition activation,
+                    # manual clip writes (which take FOR SHARE), clip creation,
+                    # and this final replacement without holding a transaction
+                    # during provider or image work.
+                    cur.execute(
+                        """
+                        SELECT id, revision, active_composition_id
+                        FROM editor_projects
+                        WHERE id = %s AND user_id = %s
+                        FOR UPDATE
+                        """,
+                        (project_id, user_id),
+                    )
+                    project = cur.fetchone()
+                    if project is None:
+                        raise EditorProjectNotFoundError("Editor project not found")
+                    if project["active_composition_id"] != expected_composition_id:
+                        raise EditorStaleCompositionError(
+                            "The active narration changed while visuals were generating"
+                        )
+
+                    cur.execute(
+                        """
+                        SELECT id, duration_ms
+                        FROM audio_compositions
+                        WHERE id = %s AND project_id = %s
+                        """,
+                        (expected_composition_id, project_id),
+                    )
+                    composition = cur.fetchone()
+                    if composition is None:
+                        raise EditorStaleCompositionError(
+                            "The captured narration composition is no longer available"
+                        )
+
+                    manual_clips = self._manual_timeline_occupancy(
+                        cur, project_id, for_update=True
+                    )
+                    asset_ids = list({placement["asset_id"] for placement in normalized})
+                    cur.execute(
+                        """
+                        SELECT id, width_px, height_px
+                        FROM media_assets
+                        WHERE project_id = %s AND user_id = %s
+                          AND status = 'ready' AND id = ANY(%s)
+                        FOR SHARE
+                        """,
+                        (project_id, user_id, asset_ids),
+                    )
+                    assets = {row["id"]: row for row in cur.fetchall()}
+                    if len(assets) != len(asset_ids):
+                        raise EditorProjectNotFoundError(
+                            "One or more generated media assets were not found"
+                        )
+
+                    duration_ms = int(composition["duration_ms"])
+                    insertable: List[Dict[str, object]] = []
+                    for placement in normalized:
+                        start_ms, end_ms = self._validate_generated_placement_window(
+                            placement["start_ms"], placement["end_ms"], duration_ms
+                        )
+                        if any(
+                            self._timeline_windows_overlap(
+                                start_ms,
+                                end_ms,
+                                int(manual["start_ms"]),
+                                int(manual["end_ms"]),
+                            )
+                            for manual in manual_clips
+                        ):
+                            continue
+
+                        asset = assets[placement["asset_id"]]
+                        x, y, width = generated_clip_geometry(
+                            int(asset["width_px"]), int(asset["height_px"])
+                        )
+                        insertable.append(
+                            {
+                                "asset_id": placement["asset_id"],
+                                "start_ms": start_ms,
+                                "end_ms": end_ms,
+                                "x": x,
+                                "y": y,
+                                "width": width,
+                            }
+                        )
+
+                    if insertable:
+                        highest_manual_z = max(
+                            (int(clip["z_index"]) for clip in manual_clips),
+                            default=-1,
+                        )
+                        generated_z_index = highest_manual_z + 1
+                        if generated_z_index > 1000:
+                            raise EditorVisualLifecycleError(
+                                "No visual layer is available above the manual clips"
+                            )
+                        validate_z_index(generated_z_index)
+                    else:
+                        generated_z_index = 0
+
+                    cur.execute(
+                        "DELETE FROM timeline_clips "
+                        "WHERE project_id = %s AND origin = 'generated'",
+                        (project_id,),
+                    )
+                    for placement in insertable:
+                        cur.execute(
+                            """
+                            INSERT INTO timeline_clips
+                                (id, project_id, asset_id, start_ms, end_ms,
+                                 x, y, width, z_index, authored_composition_id,
+                                 timing_status, origin)
+                            VALUES
+                                (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                 'aligned', 'generated')
+                            """,
+                            (
+                                uuid4(),
+                                project_id,
+                                placement["asset_id"],
+                                placement["start_ms"],
+                                placement["end_ms"],
+                                placement["x"],
+                                placement["y"],
+                                placement["width"],
+                                generated_z_index,
+                                expected_composition_id,
+                            ),
+                        )
+
+                    self._advance_project_revision_keep_composition(
+                        cur, project_id, user_id
+                    )
+                    return self._get_project(cur, project_id, user_id)
+        finally:
+            conn.close()
+
     def create_media_asset(
         self,
         project_id: UUID,
@@ -503,9 +864,10 @@ class EditorRepository:
                         "SELECT COUNT(*) AS count FROM media_assets WHERE project_id = %s",
                         (project_id,),
                     )
-                    if cur.fetchone()["count"] >= 20:
+                    if cur.fetchone()["count"] >= _MAX_MEDIA_ASSETS_PER_PROJECT:
                         raise MediaAssetLimitError(
-                            "A project can contain at most 20 uploaded images"
+                            f"A project can contain at most "
+                            f"{_MAX_MEDIA_ASSETS_PER_PROJECT} images"
                         )
                     cur.execute(
                         """
@@ -667,17 +1029,19 @@ class EditorRepository:
     ) -> Dict[str, object]:
         """Autosave-style clip edit: clip-scoped revision, project untouched.
 
-        Swapping asset_id preserves geometry/timing (only provided fields
-        change). Retiming re-authors the clip against the active composition
-        and clamps to its duration; geometry-only edits leave timing fields
-        and timing_status untouched.
+        Any persisted edit makes the clip manual so later visual generation
+        cannot replace a user-adjusted clip. Swapping asset_id preserves
+        geometry/timing (only provided fields change). Retiming re-authors the
+        clip against the active composition and clamps to its duration;
+        geometry-only edits leave timing fields and timing_status untouched.
         """
         conn = get_db_conn()
         try:
             with conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                    # Serialize against composition activation so a retime can
-                    # never clamp against an old duration after reconciliation.
+                    # Serialize against composition activation so a retime uses
+                    # one stable active composition. Activation itself leaves
+                    # visual clips untouched.
                     cur.execute(
                         "SELECT id FROM editor_projects WHERE id = %s AND user_id = %s FOR SHARE",
                         (project_id, user_id),
@@ -689,7 +1053,7 @@ class EditorRepository:
                         SELECT clip.id, clip.asset_id, clip.start_ms, clip.end_ms,
                                clip.x, clip.y, clip.width, clip.z_index,
                                clip.timing_status, clip.authored_composition_id,
-                               clip.revision,
+                               clip.origin, clip.revision,
                                asset.width_px AS asset_width_px,
                                asset.height_px AS asset_height_px,
                                composition.id AS composition_id,
@@ -759,11 +1123,12 @@ class EditorRepository:
                         SET asset_id = %s, start_ms = %s, end_ms = %s,
                             x = %s, y = %s, width = %s, z_index = %s,
                             authored_composition_id = %s, timing_status = %s,
-                            revision = revision + 1, updated_at = NOW()
+                            origin = 'manual', revision = revision + 1,
+                            updated_at = NOW()
                         WHERE id = %s AND revision = %s
                         RETURNING id, project_id, asset_id, start_ms, end_ms, x, y,
                                   width, z_index, authored_composition_id,
-                                  timing_status, revision, created_at, updated_at
+                                  timing_status, origin, revision, created_at, updated_at
                         """,
                         (
                             updates.get("asset_id", current["asset_id"]),
@@ -812,6 +1177,115 @@ class EditorRepository:
                     return self._get_project(cur, project_id, user_id)
         finally:
             conn.close()
+
+    def _manual_timeline_occupancy(
+        self,
+        cur: RealDictCursor,
+        project_id: UUID,
+        for_update: bool = False,
+    ) -> List[Dict[str, object]]:
+        lock_clause = " FOR UPDATE" if for_update else ""
+        cur.execute(
+            """
+            SELECT id, start_ms, end_ms, z_index
+            FROM timeline_clips
+            WHERE project_id = %s AND origin = 'manual'
+            ORDER BY start_ms, end_ms, id
+            """
+            + lock_clause,
+            (project_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def _normalize_generated_placements(
+        self, placements: List[GeneratedTimelinePlacement]
+    ) -> List[Dict[str, object]]:
+        normalized: List[Dict[str, object]] = []
+        for placement in placements:
+            try:
+                raw_asset_id = placement["asset_id"]
+                start_ms = placement["start_ms"]
+                end_ms = placement["end_ms"]
+            except (KeyError, TypeError) as exc:
+                raise EditorVisualLifecycleError(
+                    "Every generated placement requires asset_id, start_ms, and end_ms"
+                ) from exc
+
+            try:
+                asset_id = (
+                    raw_asset_id
+                    if isinstance(raw_asset_id, UUID)
+                    else UUID(str(raw_asset_id))
+                )
+            except (TypeError, ValueError, AttributeError) as exc:
+                raise EditorVisualLifecycleError(
+                    "Generated placement asset_id must be a UUID"
+                ) from exc
+            if (
+                not isinstance(start_ms, int)
+                or isinstance(start_ms, bool)
+                or not isinstance(end_ms, int)
+                or isinstance(end_ms, bool)
+            ):
+                raise EditorClipValidationError(
+                    "Generated placement times must be integer milliseconds"
+                )
+            if start_ms < 0:
+                raise EditorClipValidationError("start_ms must be at least 0")
+            if end_ms <= start_ms:
+                raise EditorClipValidationError("end_ms must be greater than start_ms")
+            if end_ms - start_ms < 500:
+                raise EditorClipValidationError(
+                    "Visual clips must be at least 0.5 seconds long"
+                )
+            normalized.append(
+                {"asset_id": asset_id, "start_ms": start_ms, "end_ms": end_ms}
+            )
+        return normalized
+
+    def _validate_generated_placement_overlaps(
+        self, placements: List[Dict[str, object]]
+    ) -> None:
+        ordered = sorted(
+            placements,
+            key=lambda placement: (placement["start_ms"], placement["end_ms"]),
+        )
+        for previous, current in zip(ordered, ordered[1:]):
+            if self._timeline_windows_overlap(
+                int(previous["start_ms"]),
+                int(previous["end_ms"]),
+                int(current["start_ms"]),
+                int(current["end_ms"]),
+            ):
+                raise EditorTimelineOverlapError(
+                    "Generated replacement placements must not overlap"
+                )
+
+    def _validate_generated_placement_window(
+        self, start_ms: int, end_ms: int, duration_ms: int
+    ) -> tuple[int, int]:
+        if start_ms >= duration_ms:
+            raise EditorClipValidationError(
+                f"start_ms {start_ms} is beyond the narration duration {duration_ms}"
+            )
+        if end_ms > duration_ms:
+            raise EditorClipValidationError(
+                f"end_ms {end_ms} is beyond the narration duration {duration_ms}"
+            )
+        # Basic range and minimum checks were done before opening the
+        # transaction; retain this call as the final timing trust-boundary
+        # validation against the locked composition.
+        return clamp_clip_window(start_ms, end_ms, duration_ms)
+
+    @staticmethod
+    def _timeline_windows_overlap(
+        first_start_ms: int,
+        first_end_ms: int,
+        second_start_ms: int,
+        second_end_ms: int,
+    ) -> bool:
+        """Return whether two half-open timeline windows intersect."""
+        return first_start_ms < second_end_ms and second_start_ms < first_end_ms
 
     def _require_active_composition(
         self, cur: RealDictCursor, project_id: UUID
@@ -901,10 +1375,10 @@ class EditorRepository:
             """
             SELECT id, s3_key AS storage_key, video_title AS title, created_at
             FROM videos
-            WHERE editor_project_id = %s AND user_id = %s
+            WHERE editor_project_id = %s
             ORDER BY created_at DESC
             """,
-            (project_id, user_id),
+            (project_id,),
         )
         result["exports"] = [dict(row) for row in cur.fetchall()]
         cur.execute(
@@ -921,8 +1395,8 @@ class EditorRepository:
         cur.execute(
             """
             SELECT id, project_id, asset_id, start_ms, end_ms, x, y, width,
-                   z_index, authored_composition_id, timing_status, revision,
-                   created_at, updated_at
+                   z_index, authored_composition_id, timing_status, origin,
+                   revision, created_at, updated_at
             FROM timeline_clips
             WHERE project_id = %s
             ORDER BY z_index, created_at, id
@@ -1113,49 +1587,11 @@ class EditorRepository:
                     )
                     if cur.rowcount != 1:
                         raise EditorProjectNotFoundError("Editor project not found")
-                    self._reconcile_clips_with_composition(
-                        cur, project_id, composition_id, duration_ms
-                    )
+                    # Narration activation is audio-only. Existing clips retain
+                    # their timing, composition binding, status, and revision
+                    # until explicit visual regeneration or a manual edit.
         finally:
             conn.close()
-
-    def _reconcile_clips_with_composition(
-        self,
-        cur,
-        project_id: UUID,
-        composition_id: UUID,
-        duration_ms: int,
-    ) -> None:
-        """Fit existing clips to a newly activated narration timeline.
-
-        Clips that still start inside the new narration keep their absolute
-        times, get their ends clamped to the new duration, and are re-authored
-        against the new composition. Clips that start beyond the new duration
-        are kept (never deleted) but flagged 'needs_review' so the UI can
-        surface them; they keep their old authored_composition_id.
-        """
-        cur.execute(
-            """
-            UPDATE timeline_clips
-            SET end_ms = LEAST(end_ms, %s),
-                authored_composition_id = %s,
-                timing_status = 'aligned',
-                revision = revision + 1,
-                updated_at = NOW()
-            WHERE project_id = %s AND start_ms <= %s
-            """,
-            (duration_ms, composition_id, project_id, duration_ms - 500),
-        )
-        cur.execute(
-            """
-            UPDATE timeline_clips
-            SET timing_status = 'needs_review',
-                revision = revision + 1,
-                updated_at = NOW()
-            WHERE project_id = %s AND start_ms > %s
-            """,
-            (project_id, duration_ms - 500),
-        )
 
     def _lock_project(
         self,

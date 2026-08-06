@@ -3,7 +3,6 @@
 This module provides the main interface for video operations,
 orchestrating between storage backends and database repositories.
 """
-import re
 from uuid import UUID, uuid4
 from pathlib import Path
 from typing import BinaryIO, Dict, List, Optional
@@ -58,7 +57,6 @@ class VideoService:
         original_filename: str,
         title: Optional[str] = None,
         description: Optional[str] = None,
-        collection_id: Optional[int] = None,
     ) -> Dict:
         """
         Complete video save operation: upload to storage + save to database.
@@ -69,7 +67,6 @@ class VideoService:
             original_filename: Original filename (used for extension)
             title: Video title
             description: Video description
-            collection_id: Optional collection ID
         
         Returns:
             Dict with:
@@ -77,12 +74,13 @@ class VideoService:
                 - storage_key: Storage location key
                 - access_url: Presigned/access URL
                 - title: Video title
-                - collection_id: Collection ID if set
         """
         # 1. Generate storage key
         ext = Path(original_filename).suffix or ".mp4"
         video_uuid = uuid4().hex
-        storage_key = f"{user_id}/{video_uuid}{ext}"
+        storage_key = (
+            f"editor/{user_id}/{editor_project_id}/exports/{video_uuid}{ext}"
+        )
         
         # 2. Upload to storage backend
         metadata = {"content_type": "video/mp4"}
@@ -91,12 +89,10 @@ class VideoService:
         # 3. Save to database
         try:
             video_id = self.repository.insert_video(
-                user_id=user_id,
                 editor_project_id=editor_project_id,
                 storage_key=storage_key,
                 title=title,
                 description=description,
-                collection_id=collection_id,
             )
         except Exception:
             self.storage.delete(storage_key)
@@ -110,7 +106,6 @@ class VideoService:
             "storage_key": storage_key,
             "access_url": access_url,
             "title": title,
-            "collection_id": collection_id,
         }
     
     def get_video(self, video_id: int, user_id: int) -> Dict:
@@ -157,34 +152,10 @@ class VideoService:
         
         return videos
     
-    def get_collection_videos(
-        self, collection_id: int, offset: int = 0, limit: int = 50
-    ) -> List[Dict]:
-        """
-        Get collection videos with presigned URLs, sorted by subtopic number.
-        
-        Args:
-            collection_id: Collection ID
-            offset: Pagination offset
-            limit: Maximum videos to return
-        
-        Returns:
-            List of video dicts sorted by subtopic number
-        """
-        videos = self.repository.get_collection_videos(collection_id, offset, limit)
-        
-        # Add presigned URLs
-        for video in videos:
-            video["presigned_url"] = self.storage.generate_url(video["storage_key"])
-        
-        # Sort by subtopic number
-        sorted_videos = sorted(videos, key=self._extract_subtopic_number)
-        
-        # Apply pagination after sorting
-        if limit and limit > 0:
-            return sorted_videos[offset:offset + limit]
-        return sorted_videos[offset:]
-    
+    def get_video_count(self, user_id: int) -> int:
+        """Return the number of exported videos owned by one user."""
+        return self.repository.get_video_count(user_id)
+
     def delete_video(self, video_id: int, user_id: int) -> bool:
         """
         Delete video from storage and database.
@@ -215,33 +186,3 @@ class VideoService:
             Dict with storage backend stats
         """
         return self.storage.get_stats()
-    
-    @staticmethod
-    def _extract_subtopic_number(video: Dict) -> int:
-        """Extract subtopic number from video description or title."""
-        description = video.get('description', '')
-        if description:
-            match = re.search(r'Subtopic\s*(\d+)/\d+', description, re.IGNORECASE)
-            if match:
-                return int(match.group(1))
-        
-        title = video.get('title', '')
-        if title:
-            match = re.search(r'subtopic[_\s]?(\d+)', title, re.IGNORECASE)
-            if match:
-                return int(match.group(1))
-        
-        return 999999  # Sort to end if no number found
-
-
-# Convenience functions for backwards compatibility
-def get_user_videos(user_id: int, offset: int = 0, limit: int = 5) -> List[Dict]:
-    """Get user videos (backwards compatible function)."""
-    service = VideoService()
-    return service.get_user_videos(user_id, offset, limit)
-
-
-def get_collection_videos(collection_id: int, offset: int = 0, limit: int = 50) -> List[Dict]:
-    """Get collection videos (backwards compatible function)."""
-    service = VideoService()
-    return service.get_collection_videos(collection_id, offset, limit)

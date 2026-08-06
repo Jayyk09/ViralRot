@@ -8,6 +8,8 @@ from typing import Dict
 from uuid import UUID, uuid4
 
 from backend_pipeline.audio_generation.minimax_tts import (
+    AUDIO_CONTENT_TYPE,
+    AUDIO_EXTENSION,
     VOICE_MAP,
     concatenate_audio_segments,
     generate_audio_from_dialouge,
@@ -29,7 +31,7 @@ class EditorAudioService:
             voice_id = VOICE_MAP.get(line["speaker"], VOICE_MAP["PETER"])
             segment_id = uuid4()
             storage_key = (
-                f"editor/{user_id}/{project_id}/segments/{segment_id}.mp3"
+                f"editor/{user_id}/{project_id}/segments/{segment_id}{AUDIO_EXTENSION}"
             )
             try:
                 audio_bytes, duration, word_timings = generate_audio_from_dialouge(
@@ -38,7 +40,7 @@ class EditorAudioService:
                 self.storage.upload(
                     BytesIO(audio_bytes),
                     storage_key,
-                    {"content_type": "audio/mpeg"},
+                    {"content_type": AUDIO_CONTENT_TYPE},
                 )
                 self.repository.complete_audio_segment(
                     project_id=project_id,
@@ -70,7 +72,7 @@ class EditorAudioService:
         try:
             segment_records = []
             for index, row in enumerate(inputs):
-                local_path = temp_dir / f"segment_{index:04d}.mp3"
+                local_path = temp_dir / f"segment_{index:04d}{AUDIO_EXTENSION}"
                 self.storage.download(row["storage_key"], str(local_path))
                 segment_records.append(
                     {
@@ -85,17 +87,17 @@ class EditorAudioService:
                     }
                 )
 
-            output_path = temp_dir / "composition.mp3"
+            output_path = temp_dir / f"composition{AUDIO_EXTENSION}"
             composed = concatenate_audio_segments(segment_records, str(output_path))
             composition_id = uuid4()
             composition_key = (
-                f"editor/{user_id}/{project_id}/compositions/{composition_id}.mp3"
+                f"editor/{user_id}/{project_id}/compositions/{composition_id}{AUDIO_EXTENSION}"
             )
             with output_path.open("rb") as audio_file:
                 self.storage.upload(
                     audio_file,
                     composition_key,
-                    {"content_type": "audio/mpeg"},
+                    {"content_type": AUDIO_CONTENT_TYPE},
                 )
 
             manifest = [

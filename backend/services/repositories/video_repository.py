@@ -1,9 +1,5 @@
-"""Video database operations (repository pattern).
+"""Database operations for exports owned through persistent editor projects."""
 
-This module handles all database operations for videos,
-separating data access from business logic.
-"""
-import re
 from typing import Dict, List, Optional
 from uuid import UUID
 
@@ -11,35 +7,15 @@ from db import get_db_conn
 
 
 class VideoRepository:
-    """Handle all video database operations.
-    
-    This class follows the repository pattern, providing a clean
-    interface for video data access without mixing in storage
-    or business logic concerns.
-    """
-    
+    """Persist and authorize exports exclusively through ``editor_project_id``."""
+
     def insert_video(
         self,
-        user_id: int,
         editor_project_id: UUID,
         storage_key: str,
         title: Optional[str] = None,
         description: Optional[str] = None,
-        collection_id: Optional[int] = None,
     ) -> int:
-        """
-        Insert video record into database.
-        
-        Args:
-            user_id: Owner user ID
-            storage_key: Storage key (R2 key or local path)
-            title: Video title
-            description: Video description
-            collection_id: Optional collection ID
-        
-        Returns:
-            video_id of inserted record
-        """
         conn = get_db_conn()
         conn.autocommit = True
         try:
@@ -47,11 +23,11 @@ class VideoRepository:
                 cur.execute(
                     """
                     INSERT INTO videos
-                        (user_id, editor_project_id, s3_key, video_title, video_description, collection_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    RETURNING id;
+                        (editor_project_id, s3_key, video_title, video_description)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
                     """,
-                    (user_id, editor_project_id, storage_key, title, description, collection_id),
+                    (editor_project_id, storage_key, title, description),
                 )
                 row = cur.fetchone()
                 if row is None:
@@ -59,172 +35,110 @@ class VideoRepository:
                 return int(row[0])
         finally:
             conn.close()
-    
+
     def get_video_by_id(self, video_id: int, user_id: int) -> Optional[Dict]:
-        """
-        Get video by ID and user_id.
-        
-        Args:
-            video_id: Video ID
-            user_id: User ID (for authorization)
-        
-        Returns:
-            Video dict or None if not found
-        """
+        """Load one export only when its parent project belongs to ``user_id``."""
         conn = get_db_conn()
         try:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, user_id, s3_key, video_title, video_description, collection_id, created_at
-                    FROM videos
-                    WHERE id = %s AND user_id = %s;
+                    SELECT video.id, video.editor_project_id, video.s3_key,
+                           video.video_title, video.video_description, video.created_at
+                    FROM videos AS video
+                    JOIN editor_projects AS project
+                      ON project.id = video.editor_project_id
+                    WHERE video.id = %s AND project.user_id = %s
                     """,
                     (video_id, user_id),
                 )
                 row = cur.fetchone()
-                if row:
-                    return {
-                        "id": row[0],
-                        "user_id": row[1],
-                        "storage_key": row[2],
-                        "title": row[3],
-                        "description": row[4],
-                        "collection_id": row[5],
-                        "created_at": row[6],
-                    }
-                return None
+                if row is None:
+                    return None
+                return {
+                    "id": row[0],
+                    "editor_project_id": row[1],
+                    "storage_key": row[2],
+                    "title": row[3],
+                    "description": row[4],
+                    "created_at": row[5],
+                }
         finally:
             conn.close()
-    
+
     def get_user_videos(
         self, user_id: int, offset: int = 0, limit: int = 5
     ) -> List[Dict]:
-        """
-        Get paginated list of user's videos.
-        
-        Args:
-            user_id: User ID
-            offset: Pagination offset
-            limit: Maximum videos to return
-        
-        Returns:
-            List of video dicts, newest first
-        """
+        """List exports through their owned projects, newest first."""
         conn = get_db_conn()
         try:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, s3_key, video_title, video_description, collection_id, created_at
-                    FROM videos
-                    WHERE user_id = %s
-                    ORDER BY created_at DESC, id DESC
-                    OFFSET %s LIMIT %s;
+                    SELECT video.id, video.editor_project_id, video.s3_key,
+                           video.video_title, video.video_description, video.created_at
+                    FROM videos AS video
+                    JOIN editor_projects AS project
+                      ON project.id = video.editor_project_id
+                    WHERE project.user_id = %s
+                    ORDER BY video.created_at DESC, video.id DESC
+                    OFFSET %s LIMIT %s
                     """,
                     (user_id, offset, limit),
                 )
-                rows = cur.fetchall()
                 return [
                     {
                         "id": row[0],
-                        "storage_key": row[1],
-                        "title": row[2],
-                        "description": row[3],
-                        "collection_id": row[4],
-                        "created_at": row[5],
-                    }
-                    for row in rows
-                ]
-        finally:
-            conn.close()
-    
-    def get_collection_videos(
-        self, collection_id: int, offset: int = 0, limit: int = 50
-    ) -> List[Dict]:
-        """
-        Get all videos in a collection.
-        
-        Args:
-            collection_id: Collection ID
-            offset: Pagination offset
-            limit: Maximum videos to return
-        
-        Returns:
-            List of video dicts
-        """
-        conn = get_db_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, user_id, s3_key, video_title, video_description, collection_id, created_at
-                    FROM videos
-                    WHERE collection_id = %s
-                    ORDER BY created_at ASC, id ASC;
-                    """,
-                    (collection_id,),
-                )
-                rows = cur.fetchall()
-                return [
-                    {
-                        "id": row[0],
-                        "user_id": row[1],
+                        "editor_project_id": row[1],
                         "storage_key": row[2],
                         "title": row[3],
                         "description": row[4],
-                        "collection_id": row[5],
-                        "created_at": row[6],
+                        "created_at": row[5],
                     }
-                    for row in rows
+                    for row in cur.fetchall()
                 ]
         finally:
             conn.close()
-    
+
     def delete_video(self, video_id: int, user_id: int) -> bool:
-        """
-        Delete video record from database.
-        
-        Args:
-            video_id: Video ID
-            user_id: User ID (for authorization)
-        
-        Returns:
-            True if deleted, False if not found
-        """
+        """Delete one export only through an owned parent project."""
         conn = get_db_conn()
         conn.autocommit = True
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "DELETE FROM videos WHERE id = %s AND user_id = %s",
+                    """
+                    DELETE FROM videos AS video
+                    USING editor_projects AS project
+                    WHERE video.id = %s
+                      AND project.id = video.editor_project_id
+                      AND project.user_id = %s
+                    """,
                     (video_id, user_id),
                 )
                 return cur.rowcount > 0
         finally:
             conn.close()
-    
+
     def get_video_count(self, user_id: Optional[int] = None) -> int:
-        """
-        Get total video count.
-        
-        Args:
-            user_id: If provided, count only user's videos
-        
-        Returns:
-            Total video count
-        """
+        """Count all exports, optionally restricted through project ownership."""
         conn = get_db_conn()
         try:
             with conn.cursor() as cur:
-                if user_id:
-                    cur.execute(
-                        "SELECT COUNT(*) FROM videos WHERE user_id = %s",
-                        (user_id,)
-                    )
-                else:
+                if user_id is None:
                     cur.execute("SELECT COUNT(*) FROM videos")
+                else:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM videos AS video
+                        JOIN editor_projects AS project
+                          ON project.id = video.editor_project_id
+                        WHERE project.user_id = %s
+                        """,
+                        (user_id,),
+                    )
                 row = cur.fetchone()
-                return row[0] if row else 0
+                return int(row[0]) if row else 0
         finally:
             conn.close()

@@ -1,7 +1,7 @@
 """API contract tests for editor project persistence."""
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
@@ -42,7 +42,55 @@ def test_create_editor_project_starts_backend_generation(client):
         user_id=1,
         description="How photosynthesis works",
         background_video_id="minecraft",
+        force_latest_search=True,
     )
+
+
+def test_create_editor_project_can_disable_latest_search(client):
+    with (
+        patch("main.ProgressService.create_transcript_job", return_value="job-1"),
+        patch("main._process_transcript_job", new_callable=AsyncMock) as process,
+    ):
+        response = client.post(
+            "/editor/projects",
+            json={
+                "description": "A timeless draft",
+                "background_video_id": "minecraft",
+                "force_latest_search": False,
+            },
+        )
+
+    assert response.status_code == 202
+    process.assert_awaited_once_with(
+        job_id="job-1",
+        user_id=1,
+        description="A timeless draft",
+        background_video_id="minecraft",
+        force_latest_search=False,
+    )
+
+
+def test_list_editor_projects_returns_owned_project_summaries(client):
+    projects = [
+        {
+            "id": PROJECT_ID,
+            "title": "Saved project",
+            "background_video_id": "minecraft",
+            "revision": 2,
+            "narration_ready": True,
+            "dialogue_count": 8,
+            "export_count": 1,
+            "latest_export_at": None,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-02T00:00:00Z",
+        }
+    ]
+    with patch("main.editor_repository.list_projects", return_value=projects) as listed:
+        response = client.get("/editor/projects?offset=0&limit=20")
+
+    assert response.status_code == 200
+    assert response.json()["projects"][0]["title"] == "Saved project"
+    listed.assert_called_once_with(1, 0, 20)
 
 
 def test_get_editor_project_returns_404(client):
@@ -207,17 +255,27 @@ def test_video_generation_rejects_missing_composition(client):
     assert "Regenerate narration" in response.json()["detail"]
 
 
-def test_gemini_result_is_persisted_before_job_completes():
-    from frontend_pipeline.script_generation.models import DialogueLine, SingleDialogue
+def test_grok_result_is_persisted_before_job_completes():
+    from services.dialogue_models import DialogueData, DialogueLine
     from main import _process_transcript_job
 
-    generated = SingleDialogue(
+    generated = DialogueData(
         title="Generated project",
-        dialogue=[DialogueLine(caption="Hello", speaker="PETER", emotion="neutral")],
+        dialogue=[
+            DialogueLine(
+                caption=f"A valid generated dialogue caption number {index} has enough words",
+                speaker="PETER" if index % 2 else "STEWIE",
+                emotion="neutral",
+            )
+            for index in range(1, 16)
+        ],
     )
+    service = MagicMock()
+    service.generate_dialogue = AsyncMock(return_value=generated)
 
     with (
-        patch("main.extract_transcripts", return_value=generated),
+        patch("main.create_xai_responses_client", return_value=MagicMock()),
+        patch("main.GrokDialogueService", return_value=service),
         patch("main.asyncio.sleep", new_callable=AsyncMock),
         patch(
             "main.editor_repository.create_project",
@@ -231,14 +289,87 @@ def test_gemini_result_is_persisted_before_job_completes():
                 user_id=1,
                 description="source text",
                 background_video_id="minecraft",
+                force_latest_search=False,
             )
         )
 
-    create.assert_called_once_with(
-        1,
-        "Generated project",
-        "minecraft",
-        [{"caption": "Hello", "speaker": "PETER", "emotion": "neutral"}],
-    )
+    service.generate_dialogue.assert_awaited_once()
+    assert service.generate_dialogue.call_args.args == ("source text", False)
+    assert service.generate_dialogue.call_args.kwargs["job_id"] == "job-1"
+    assert service.generate_dialogue.call_args.kwargs["user_id"] == 1
+    assert create.call_args.args[:3] == (1, "Generated project", "minecraft")
+    assert len(create.call_args.args[3]) == 15
+    assert create.call_args.args[3][0] == {
+        "caption": "A valid generated dialogue caption number 1 has enough words",
+        "speaker": "PETER",
+        "emotion": "neutral",
+    }
     assert update_job.call_args.kwargs["status"] == "completed"
     assert update_job.call_args.kwargs["result"] == {"project_id": str(PROJECT_ID)}
+
+
+def test_job_progress_exposes_safe_generation_envelope(client):
+    from services.generation_errors import ProviderTimeoutError
+    from services.progress_service import (
+        PROGRESS_STORAGE,
+        WEBSOCKET_CONNECTIONS,
+        ProgressService,
+    )
+
+    with patch.object(ProgressService, "_schedule_broadcast"):
+        job_id = ProgressService.create_transcript_job(user_id=1)
+        ProgressService.update_job(
+            job_id,
+            status="processing",
+            current_stage="generating_dialogue",
+        )
+
+        ProgressService.fail_job(job_id, ProviderTimeoutError(details={"raw": "secret"}))
+        failed = client.get(f"/jobs/{job_id}/progress")
+
+    payload = failed.json()
+    assert payload["error"] == "The generation provider timed out. Try again."
+    assert payload["generation_error"] == {
+        "code": "provider_timeout",
+        "message": "The generation provider timed out. Try again.",
+        "retry_action": "retry_now",
+    }
+    assert "secret" not in str(payload)
+    PROGRESS_STORAGE.pop(job_id, None)
+    WEBSOCKET_CONNECTIONS.pop(job_id, None)
+
+
+def test_unknown_transcript_failure_is_logged_but_job_gets_generic_error():
+    from main import _process_transcript_job
+    from services.generation_errors import GenerationError
+
+    service = MagicMock()
+    service.generate_dialogue = AsyncMock(
+        side_effect=RuntimeError("secret provider implementation detail")
+    )
+    with (
+        patch("main.create_xai_responses_client", return_value=MagicMock()),
+        patch("main.GrokDialogueService", return_value=service),
+        patch("main.asyncio.sleep", new_callable=AsyncMock),
+        patch("main.ProgressService.update_job"),
+        patch("main.ProgressService.fail_job") as fail_job,
+        patch("main.LOGGER.exception") as log_exception,
+    ):
+        asyncio.run(
+            _process_transcript_job(
+                job_id="job-unknown",
+                user_id=1,
+                description="source text",
+                background_video_id="minecraft",
+            )
+        )
+
+    public_error = fail_job.call_args.args[1]
+    assert type(public_error) is GenerationError
+    assert public_error.to_dict() == {
+        "code": "generation_failed",
+        "message": "Generation could not be completed.",
+        "retry_action": "retry_now",
+    }
+    assert "secret" not in str(public_error)
+    log_exception.assert_called_once()

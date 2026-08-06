@@ -13,6 +13,9 @@ load_dotenv()
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY")
 MINIMAX_GROUP_ID = os.getenv("MINIMAX_GROUP_ID")
 MINIMAX_API_URL = "https://api.minimax.io/v1/t2a_v2"
+AUDIO_FORMAT = "wav"
+AUDIO_EXTENSION = ".wav"
+AUDIO_CONTENT_TYPE = "audio/wav"
 
 # Voice mapping for different speakers
 VOICE_MAP = {
@@ -134,8 +137,7 @@ def generate_audio_from_dialouge(dialouge: str, voice_id: str) -> tuple[bytes, f
         },
         "audio_setting": {
             "sample_rate": 32000,
-            "bitrate": 128000,
-            "format": "mp3",
+            "format": AUDIO_FORMAT,
             "channel": 1,
         },
         "output_format": "hex",
@@ -172,11 +174,10 @@ def generate_audio_from_dialouge(dialouge: str, voice_id: str) -> tuple[bytes, f
             "audio_length": 11124,
             "audio_sample_rate": 32000,
             "audio_size": 179926,
-            "bitrate": 128000,
             "word_count": 163,
             "invisible_character_ratio": 0,
             "usage_characters": 163,
-            "audio_format": "mp3",
+            "audio_format": "wav",
             "audio_channel": 1
           },
           "trace_id": "01b8bf9bb7433cc75c18eee6cfa8fe21",
@@ -269,7 +270,7 @@ def generate_audio_from_transcript(
 
             # Save audio to file
             output_file = os.path.join(
-                output_dir, f"segment_{idx:03d}_{speaker.lower()}.mp3"
+                output_dir, f"segment_{idx:03d}_{speaker.lower()}{AUDIO_EXTENSION}"
             )
             with open(output_file, "wb") as f:
                 f.write(audio_bytes)
@@ -297,7 +298,7 @@ def generate_audio_from_transcript(
 
 
 def concatenate_audio_segments(
-    audio_segments: List[Dict[str, Any]], output_file: str = "assets/audio/full_audio.mp3"
+    audio_segments: List[Dict[str, Any]], output_file: str = "assets/audio/full_audio.wav"
 ) -> Dict[str, Any]:
     """
     Concatenate all audio segments into a single file with metadata.
@@ -431,7 +432,7 @@ if __name__ == "__main__":
         segments = generate_audio_from_transcript(test_transcript, test_output_dir)
         
         # Concatenate segments
-        result = concatenate_audio_segments(segments, f"{test_output_dir}/full.mp3")
+        result = concatenate_audio_segments(segments, f"{test_output_dir}/full.wav")
         
         print(f"\n🎉 Test complete! Total duration: {result['total_duration']:.2f} seconds")
         print(f"📄 Generated {len(result['timings'])} audio segments")

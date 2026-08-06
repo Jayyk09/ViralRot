@@ -19,6 +19,7 @@ from storage import get_storage_backend
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_IMAGE_DIMENSION = 4096  # px, each axis
+MIN_DISCOVERED_IMAGE_DIMENSION = 300  # px, each axis
 ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp"}
 NORMALIZED_CONTENT_TYPE = "image/webp"
 WEBP_QUALITY = 90
@@ -33,17 +34,26 @@ class MediaValidationError(Exception):
     """Raised when an uploaded file fails image validation."""
 
 
-def normalize_image(data: bytes) -> Tuple[bytes, int, int]:
+def normalize_image(
+    data: bytes,
+    *,
+    minimum_dimension: int = 1,
+) -> Tuple[bytes, int, int]:
     """Validate and normalize uploaded image bytes.
 
     - Accepts PNG/JPEG/WebP only (verified by decoding, not by declared type)
     - Enforces MAX_UPLOAD_BYTES and MAX_IMAGE_DIMENSION
+    - Optionally enforces a minimum on both orientation-corrected axes
     - Applies the EXIF orientation to the pixels
     - Re-encodes as a single (non-animated) WebP with all metadata discarded
 
     Returns (webp_bytes, width_px, height_px) where the dimensions describe
     the orientation-corrected image.
     """
+    if minimum_dimension < 1 or minimum_dimension > MAX_IMAGE_DIMENSION:
+        raise ValueError(
+            f"minimum_dimension must be between 1 and {MAX_IMAGE_DIMENSION}"
+        )
     if not data:
         raise MediaValidationError("Uploaded file is empty")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -94,6 +104,10 @@ def normalize_image(data: bytes) -> Tuple[bytes, int, int]:
         raise MediaValidationError(
             f"Image dimensions exceed {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION}"
         )
+    if width < minimum_dimension or height < minimum_dimension:
+        raise MediaValidationError(
+            f"Image dimensions must be at least {minimum_dimension}x{minimum_dimension}"
+        )
 
     if image.mode not in ("RGB", "RGBA"):
         has_alpha = (
@@ -132,19 +146,54 @@ class MediaAssetService:
         original_filename: str,
         declared_content_type: Optional[str],
     ) -> Dict[str, object]:
-        """Normalize, store, and persist an uploaded image.
+        """Normalize, store, and persist a user-uploaded image."""
+        return self._upload_image(
+            project_id=project_id,
+            user_id=user_id,
+            data=data,
+            original_filename=original_filename,
+            declared_content_type=declared_content_type,
+            minimum_dimension=1,
+        )
 
-        Order matters: bytes are uploaded first and the DB row second, with a
-        compensating storage delete if the insert fails - so a media_assets
-        row only ever exists for an object that is really in storage.
-        """
+    def upload_discovered_image(
+        self,
+        project_id: UUID,
+        user_id: int,
+        data: bytes,
+        declared_content_type: Optional[str],
+    ) -> Dict[str, object]:
+        """Persist a fetched original only after 300px validation + WebP normalization."""
+        return self._upload_image(
+            project_id=project_id,
+            user_id=user_id,
+            data=data,
+            original_filename="discovered-image",
+            declared_content_type=declared_content_type,
+            minimum_dimension=MIN_DISCOVERED_IMAGE_DIMENSION,
+        )
+
+    def _upload_image(
+        self,
+        *,
+        project_id: UUID,
+        user_id: int,
+        data: bytes,
+        original_filename: str,
+        declared_content_type: Optional[str],
+        minimum_dimension: int,
+    ) -> Dict[str, object]:
+        """Normalize then upload before DB insert, compensating on insert failure."""
         declared = (declared_content_type or "").split(";")[0].strip().lower()
         if declared and declared not in ALLOWED_CONTENT_TYPES:
             raise MediaValidationError(
                 "Unsupported content type: only PNG, JPEG, and WebP are accepted"
             )
 
-        webp_bytes, width_px, height_px = normalize_image(data)
+        webp_bytes, width_px, height_px = normalize_image(
+            data,
+            minimum_dimension=minimum_dimension,
+        )
 
         asset_id = uuid4()
         # Server-generated key (client filename is display metadata only),

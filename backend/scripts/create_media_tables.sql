@@ -86,6 +86,12 @@ CREATE TABLE IF NOT EXISTS timeline_clips (
     timing_status TEXT NOT NULL DEFAULT 'aligned'
         CHECK (timing_status IN ('aligned', 'needs_review')),
 
+    -- Manual clips are user-created or have been edited by the user.
+    -- Generated clips may be replaced by a later visual-generation run.
+    origin TEXT NOT NULL DEFAULT 'manual',
+    CONSTRAINT ck_timeline_clips_origin
+        CHECK (origin IN ('manual', 'generated')),
+
     -- Optimistic concurrency for autosaved geometry/time edits (mirrors
     -- dialogue_lines.revision).
     revision INTEGER NOT NULL DEFAULT 1
@@ -94,6 +100,34 @@ CREATE TABLE IF NOT EXISTS timeline_clips (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Upgrade databases created before clip origin was introduced. Adding the
+-- nullable column first makes the explicit backfill clear, while the final
+-- default ensures clips created by origin-unaware code remain manual.
+ALTER TABLE timeline_clips
+    ADD COLUMN IF NOT EXISTS origin TEXT;
+
+UPDATE timeline_clips
+SET origin = 'manual'
+WHERE origin IS NULL;
+
+ALTER TABLE timeline_clips
+    ALTER COLUMN origin SET DEFAULT 'manual',
+    ALTER COLUMN origin SET NOT NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ck_timeline_clips_origin'
+          AND conrelid = 'timeline_clips'::regclass
+    ) THEN
+        ALTER TABLE timeline_clips
+            ADD CONSTRAINT ck_timeline_clips_origin
+            CHECK (origin IN ('manual', 'generated'));
+    END IF;
+END
+$$;
 
 -- Add the bound when upgrading a database where timeline_clips already
 -- existed before this migration learned about z-index limits.
@@ -116,5 +150,8 @@ CREATE INDEX IF NOT EXISTS idx_timeline_clips_project_start
 
 CREATE INDEX IF NOT EXISTS idx_timeline_clips_asset
     ON timeline_clips(asset_id);
+
+CREATE INDEX IF NOT EXISTS idx_timeline_clips_project_origin
+    ON timeline_clips(project_id, origin);
 
 COMMIT;

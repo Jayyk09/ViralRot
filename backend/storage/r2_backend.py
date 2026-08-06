@@ -100,6 +100,11 @@ class R2StorageBackend(StorageBackend):
             key = obj["Key"]
             if key.endswith("/") or not key.lower().endswith(".mp4"):
                 continue
+            # A dedicated background bucket historically stored catalog clips
+            # at its root. Ignore old user/export folders if that bucket was
+            # previously also (incorrectly) used for project artifacts.
+            if not self.background_prefix and "/" in key:
+                continue
             url = self.s3.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": self.bucket, "Key": key},

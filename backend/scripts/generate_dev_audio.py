@@ -7,7 +7,7 @@ Run from the backend/ directory:
     python scripts/generate_dev_audio.py
 
 Output:
-    dev_fixtures/full_audio.mp3       — concatenated narration
+    dev_fixtures/full_audio.wav       — concatenated narration
     dev_fixtures/audio_result.json    — AudioResult-compatible fixture
 
 Then enable the fixture in both development servers:
@@ -27,7 +27,7 @@ from backend_pipeline.audio_generation.minimax_tts import (
 
 FIXTURES_DIR = Path(__file__).parent.parent / "dev_fixtures"
 SEGMENTS_DIR = FIXTURES_DIR / "segments"
-AUDIO_OUT    = FIXTURES_DIR / "full_audio.mp3"
+AUDIO_OUT    = FIXTURES_DIR / "full_audio.wav"
 RESULT_OUT   = FIXTURES_DIR / "audio_result.json"
 
 # Mirrors MOCK_TRANSCRIPT in frontend/app/create2/page.tsx.
@@ -84,7 +84,7 @@ def main():
         })
 
     audio_result = {
-        "audio_url":            "http://localhost:8000/dev/fixtures/full_audio.mp3",
+        "audio_url":            "http://localhost:8000/dev/fixtures/full_audio.wav",
         "background_video_url": "",
         "line_timings":         line_timings,
         "word_timestamps":      word_timestamps,
@@ -95,7 +95,7 @@ def main():
 
     total = result["total_duration"]
     print(f"\n✅ Fixture ready:")
-    print(f"   Audio  → dev_fixtures/full_audio.mp3  ({total:.1f}s)")
+    print(f"   Audio  → dev_fixtures/full_audio.wav  ({total:.1f}s)")
     print(f"   JSON   → dev_fixtures/audio_result.json")
     print(f"\n💡 Enable fixture mode:")
     print(f"      backend/.env:        ENABLE_DEV_FIXTURES=true")

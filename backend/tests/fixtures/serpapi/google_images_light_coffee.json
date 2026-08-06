@@ -1,0 +1,88 @@
+{
+  "search_metadata": {
+    "id": "6959274a8c24bd247f1be7d5",
+    "status": "Success",
+    "google_images_light_url": "https://www.google.com/search?q=Coffee&hl=en&gl=us&tbm=isch",
+    "total_time_taken": 0.84
+  },
+  "search_parameters": {
+    "engine": "google_images_light",
+    "q": "Coffee",
+    "google_domain": "google.com",
+    "hl": "en",
+    "gl": "us",
+    "device": "desktop"
+  },
+  "images_results": [
+    {
+      "position": 1,
+      "title": "Coffee - Wikipedia",
+      "source": "Wikipedia, the free encyclopedia",
+      "link": "https://en.wikipedia.org/wiki/Coffee",
+      "original": "https://upload.wikimedia.org/wikipedia/commons/e/e4/Latte_and_dark_coffee.jpg",
+      "original_width": 3200,
+      "original_height": 2000,
+      "thumbnail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQACFwti5m2SCWxljV4G6YxwSlLWFgNFm-7_9zJMd8vI4FdMnZs&s",
+      "serpapi_thumbnail": "https://serpapi.com/images/url/H0cLdXicu5mVUVJSUGylr5-al1xUWVCSmqJbkpRnoJdeXJJYkpmsl5yfq5-Zm5ieWmxfaAuUsXL0S7F0Tw50dHYrL8k0zTUKdg6vyMkKM3E3i6woD87xCXdL93PL1TWPt6zy8k2xKPM0cUvxzYsqVisGAHtVJjI"
+    },
+    {
+      "position": 2,
+      "title": "How to tap into the health benefits of coffee",
+      "source": "NBC News",
+      "link": "https://www.nbcnews.com/better/lifestyle/how-tap-health-benefits-coffee-ncna1096031",
+      "original": "https://media-cldnry.s-nbcnews.com/image/upload/newscms/2019_33/2203981/171026-better-coffee-boost-se-329p.jpg",
+      "original_width": 1500,
+      "original_height": 998,
+      "thumbnail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQqwYcMnuLT0irgzcRdMRSBvTkXJtY9xRmFb7cAAUr-HLxXfUU&s",
+      "serpapi_thumbnail": "https://serpapi.com/images/url/2NvO1nicu5mZUVJSUGylr5-al1xUWVCSmqJbkpRnoJdeXJJYkpmsl5yfq5-Zm5ieWmxfaAuUsXL0S7F0Tw4sLI9M9s0r9QkxyCxKr0oOSvENCnYqC8mO8CqJtKwIynVLMk92dAwt0vXwqYhICw1VKwYAeGw"
+    },
+    {
+      "position": 3,
+      "title": "Coffee bean - Wikipedia",
+      "source": "Wikipedia, the free encyclopedia",
+      "link": "https://en.wikipedia.org/wiki/Coffee_bean",
+      "original": "https://upload.wikimedia.org/wikipedia/commons/c/c5/Roasted_coffee_beans.jpg",
+      "original_width": 1600,
+      "original_height": 1200,
+      "thumbnail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcStBNY1A8XkEH2KpbdkO29wVb_v4tdPGlH-RqNUVRxk9EWTzavu&s",
+      "serpapi_thumbnail": "https://serpapi.com/images/url/3WwpTnicu5mVUVJSUGylr5-al1xUWVCSmqJbkpRnoJdeXJJYkpmsl5yfq5-Zm5ieWmxfaAuUsXL0S7F0Tw4ucfKLNHS0iMh29TDyLkhKyfY3siwPS4ovMylJCXDP8dANKvQLDQuqyLZ0DQ-pSiwrVSsGAKUKJ68"
+    },
+    {
+      "position": 4,
+      "title": "Benefits of Coffee",
+      "source": "Academy of Nutrition and Dietetics",
+      "link": "https://www.eatright.org/health/wellness/healthful-habits/benefits-of-coffee",
+      "original": "https://www.eatright.org/-/media/images/eatright-articles/eatright-article-feature-images/benefitsofcoffee_600x450.jpg",
+      "original_width": 967,
+      "original_height": 725,
+      "thumbnail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTfveu1hFZ9MD-WPtb0UxEsGT3tESRfEyeaAow_yV-H0PBciMeH&s",
+      "serpapi_thumbnail": "https://serpapi.com/images/url/_VTSoXicu5mVUVJSUGylr5-al1xUWVCSmqJbkpRnoJdeXJJYkpmsl5yfq5-Zm5ieWmxfaAuUsXL0S7F0Tw5JK0stNcxwi7L0ddENDyhJMgitcC12DzEucQ0OSnOtTE10zC-PrwzT9TAIcErO9E31UCsGAJThJrU"
+    },
+    {
+      "position": 5,
+      "title": "Is coffee healthy? | CNN",
+      "source": "CNN",
+      "link": "https://www.cnn.com/2017/09/29/health/coffee-healthy-food-drayer",
+      "original": "https://media.cnn.com/api/v1/images/stellar/prod/150929101049-black-coffee-stock.jpg",
+      "original_width": 3000,
+      "original_height": 3074,
+      "thumbnail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSjKk_AlIrvQnDjO9SDXgbZis-TCZR1E5uY_8C5S8CzHFk-u9bJ&s",
+      "serpapi_thumbnail": "https://serpapi.com/images/url/ys4873icu5mVUVJSUGylr5-al1xUWVCSmqJbkpRnoJdeXJJYkpmsl5yfq5-Zm5ieWmxfaAuUsXL0S7F0Tw7O8s6Od8zxLCoLzHPJ8rcMdolIT4rKLNYNcY4KMnQ1LY2Mt3A2DbZwrvJwy9YttUzyUisGAHkxJaI"
+    },
+    {
+      "position": 75,
+      "title": "What's the buzz about cycling and coffee? | ROUVY",
+      "source": "ROUVY",
+      "link": "https://rouvy.com/blog/cycling-and-coffee",
+      "original": "https://images.rouvy.com/IJWMo_78viqz6wBetXFSPCYGWuI=/center/middle/shutterstock_2052696470_min_deaebabc60.jpg",
+      "original_width": 4900,
+      "original_height": 3071,
+      "thumbnail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQj5fQsmpnonHyEvgqmD9tf8BkmwR7flH-XkEVSrqfgSZqb1eM0&s",
+      "serpapi_thumbnail": "https://serpapi.com/images/url/BpvUT3icu5mVUVJSUGylr5-al1xUWVCSmqJbkpRnoJdeXJJYkpmsl5yfq5-Zm5ieWmxfaAuUsXL0S7F0Tw7MMk0LLM4tyMvP86h0LUsvzHWxLEmzcMrOLQ8yT8vx0I3Idg0LLipMSw-OKkwyTPU1UCsGAKnRJ24"
+    }
+  ],
+  "serpapi_pagination": {
+    "current": 1,
+    "next": "https://serpapi.com/search.json?device=desktop&engine=google_images_light&gl=us&google_domain=google.com&hl=en&q=Coffee&start=100"
+  }
+}
