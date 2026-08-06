@@ -18,6 +18,7 @@ from services.media_service import (
 from services.repositories.editor_repository import (
     EditorClipValidationError,
     EditorCompositionRequiredError,
+    EditorRepository,
     EditorProjectNotFoundError,
     EditorRevisionConflictError,
     MediaAssetInUseError,
@@ -28,6 +29,7 @@ from services.repositories.editor_repository import (
 PROJECT_ID = UUID("11111111-1111-4111-8111-111111111111")
 ASSET_ID = UUID("55555555-5555-4555-8555-555555555555")
 CLIP_ID = UUID("66666666-6666-4666-8666-666666666666")
+COMPOSITION_ID = UUID("77777777-7777-4777-8777-777777777777")
 
 
 @pytest.fixture
@@ -167,6 +169,36 @@ def test_upload_image_rejects_disallowed_declared_content_type():
         service.upload_image(PROJECT_ID, 1, _png_bytes(), "a.svg", "image/svg+xml")
 
     storage.upload.assert_not_called()
+
+
+# ============ Narration/visual timeline boundary ============
+
+def test_activate_composition_does_not_mutate_timeline_clips():
+    connection = MagicMock()
+    cursor = MagicMock()
+    connection.cursor.return_value.__enter__.return_value = cursor
+    cursor.rowcount = 1
+
+    with patch(
+        "services.repositories.editor_repository.get_db_conn",
+        return_value=connection,
+    ):
+        EditorRepository().activate_composition(
+            PROJECT_ID,
+            1,
+            COMPOSITION_ID,
+            "editor/1/project/composition.mp3",
+            5000,
+            [{"line_id": "line-1", "start_ms": 0, "end_ms": 5000}],
+        )
+
+    statements = [call.args[0] for call in cursor.execute.call_args_list]
+    assert len(statements) == 2
+    assert "INSERT INTO audio_compositions" in statements[0]
+    assert "UPDATE editor_projects" in statements[1]
+    # Narration regeneration must not mark, remove, retime, rebind, or bump
+    # visual clips; those changes belong to visual regeneration/manual edits.
+    assert all("timeline_clips" not in statement for statement in statements)
 
 
 # ============ Clip timing/geometry validation ============

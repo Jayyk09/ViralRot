@@ -9,7 +9,10 @@ import os
 @pytest.fixture(autouse=True)
 def mock_env_vars(monkeypatch):
     """Set up test environment variables."""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("XAI_API_KEY", "test-xai-key")
+    monkeypatch.setenv("XAI_MODEL", "grok-4.5")
+    monkeypatch.setenv("SERPAPI_API_KEY", "test-serpapi-key")
+    monkeypatch.setenv("IMAGE_CANDIDATE_SIGNING_KEY", "test-candidate-signing-key-32-bytes-min")
     monkeypatch.setenv("MINIMAX_API_KEY", "test-minimax-key")
     monkeypatch.setenv("MINIMAX_GROUP_ID", "test-group-id")
     monkeypatch.setenv("MINIMAX_PETER_VOICE", "test-peter-voice")
@@ -17,35 +20,6 @@ def mock_env_vars(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("LOCAL_STORAGE_DIR", "/tmp/test-storage")
-
-
-@pytest.fixture
-def sample_subtopic_dialogue():
-    """Sample subtopic dialogue for testing."""
-    return {
-        "subtopic_title": "Photosynthesis Basics",
-        "dialogue": [
-            {"caption": "Hey Stewie, ever wonder how plants eat?", "speaker": "PETER", "emotion": "excited"},
-            {"caption": "Plants dont eat, Peter. They photosynthesize.", "speaker": "STEWIE", "emotion": "neutral"},
-            {"caption": "Photo-what now?", "speaker": "PETER", "emotion": "confused"},
-            {"caption": "They convert sunlight into energy. Its quite brilliant.", "speaker": "STEWIE", "emotion": "excited"},
-        ]
-    }
-
-
-@pytest.fixture
-def sample_subtopics(sample_subtopic_dialogue):
-    """Sample list of subtopics for testing."""
-    return [
-        sample_subtopic_dialogue,
-        {
-            "subtopic_title": "Light Reactions",
-            "dialogue": [
-                {"caption": "So what happens in the light?", "speaker": "PETER", "emotion": "neutral"},
-                {"caption": "Chlorophyll absorbs light energy.", "speaker": "STEWIE", "emotion": "teaching"},
-            ]
-        }
-    ]
 
 
 @pytest.fixture
@@ -66,7 +40,7 @@ def temp_video_file(temp_output_dir):
 @pytest.fixture
 def temp_audio_file(temp_output_dir):
     """Create a temporary fake audio file."""
-    audio_path = temp_output_dir / "test_audio.mp3"
+    audio_path = temp_output_dir / "test_audio.wav"
     audio_path.write_bytes(b"fake audio content")
     return audio_path
 
@@ -84,7 +58,7 @@ def mock_minimax_tts():
             },
             "extra_info": {
                 "audio_length": 3000,  # 3 seconds in milliseconds
-                "audio_format": "mp3"
+                "audio_format": "wav"
             },
             "base_resp": {
                 "status_code": 0,
@@ -92,13 +66,6 @@ def mock_minimax_tts():
             }
         }
         mock.return_value = mock_response
-        yield mock
-
-
-@pytest.fixture
-def mock_gemini():
-    """Mock Gemini API calls."""
-    with patch("frontend_pipeline.script_generation.transcripts.genai") as mock:
         yield mock
 
 
