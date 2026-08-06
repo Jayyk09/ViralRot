@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import re
 import shutil
@@ -23,6 +24,17 @@ from services.media_service import (
 from services.video_service import VideoService, get_collection_videos
 from services.collection_service import create_collection, get_collection, get_user_collections, find_last_collection
 from services.progress_service import ProgressService, set_event_loop
+from services.generation_errors import GenerationError, InvalidProviderOutputError
+from services.grok_dialogue_service import GrokDialogueService, create_xai_responses_client
+from services.visual_generation_service import (
+    VisualGenerationActiveError,
+    VisualGenerationInvalidRequestError,
+    VisualGenerationNotFoundError,
+    VisualGenerationService,
+    claim_visual_run,
+    get_active_visual_job_id,
+    is_visual_generation_active,
+)
 from services.repositories.editor_repository import (
     EditorClipValidationError,
     EditorCompositionRequiredError,
@@ -36,13 +48,23 @@ from services.repositories.editor_repository import (
 )
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
-from frontend_pipeline.script_generation.transcripts import extract_transcripts
 from backend_pipeline.generate_video import get_background_video_from_storage
 from backend_pipeline.video_assembly.ffMpeg import create_video_with_audio_and_captions
 
-from storage.factory import get_storage_backend
+from storage.factory import get_background_storage_backend, get_storage_backend
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+# httpx (and httpcore) log full request URLs at INFO, including query strings
+# and, for SerpApi, the API key. Keep third-party HTTP client logs at WARNING
+# so only our own privacy-reviewed structured operation records reach INFO.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 BACKEND_DIR = Path(__file__).resolve().parent
+LOGGER = logging.getLogger(__name__)
 
 DIRS = {
     "background_videos": BACKEND_DIR / "assets" / "videos",
@@ -63,6 +85,7 @@ PUBLIC_API_BASE_URL = os.getenv("PUBLIC_API_BASE_URL", "http://localhost:8000").
 class EditorProjectGenerateRequest(BaseModel):
     description: str
     background_video_id: str
+    force_latest_search: bool = True
 
 
 class EditorProjectUpdate(BaseModel):
@@ -128,6 +151,27 @@ class TimelineClipUpdate(BaseModel):
 class TimelineClipDelete(BaseModel):
     expected_project_revision: int
 
+
+class VisualGenerationStartRequest(BaseModel):
+    mode: str = Field(pattern="^(automatic|review)$")
+
+
+class VisualGenerationCandidateSelection(BaseModel):
+    slot_id: str
+    candidate_token: str
+
+
+class VisualGenerationPlaceRequest(BaseModel):
+    selections: List[VisualGenerationCandidateSelection] = Field(min_length=1)
+
+
+class VisualGenerationSlotSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=160)
+
+
+class VisualGenerationRetryRequest(BaseModel):
+    slot_ids: Optional[List[str]] = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle handler for startup and shutdown tasks."""
@@ -166,6 +210,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Accept-Ranges", "Content-Range", "Content-Length", "ETag"],
 )
 
 
@@ -321,6 +366,9 @@ async def get_job_progress(
         "created_at": job.created_at.isoformat(),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "error": job.error,
+        "generation_error": (
+            job.generation_error.model_dump() if job.generation_error else None
+        ),
     }
     
     # Add video-specific fields
@@ -337,6 +385,47 @@ async def get_job_progress(
 
 async def _run_blocking(func, *args, **kwargs):
     return await asyncio.to_thread(func, *args, **kwargs)
+
+
+def _record_generation_job_failure(
+    job_id: str,
+    error: Exception,
+    *,
+    operation: str,
+    user_id: int,
+    project_id: UUID | None = None,
+) -> None:
+    """Expose only stable job errors; retain unknown diagnostics in server logs."""
+
+    public_error = error if isinstance(error, GenerationError) else GenerationError()
+    if not isinstance(error, GenerationError):
+        LOGGER.exception(
+            "Unexpected generation job failure",
+            extra={
+                "generation_operation": operation,
+                "job_id": job_id,
+                "user_id": user_id,
+                "project_id": str(project_id) if project_id is not None else None,
+            },
+        )
+    ProgressService.fail_job(job_id, public_error)
+
+
+def _reject_if_visual_generation_active(project_id: UUID, user_id: int) -> None:
+    """Block narration writes/regeneration while a visual run owns this project.
+
+    Visual edits (uploads, clip placement/geometry/timing) remain allowed; only
+    narration-affecting writes call this guard.
+    """
+    active_job_id = get_active_visual_job_id(user_id, project_id)
+    if active_job_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                **VisualGenerationActiveError(details={"job_id": active_job_id}).to_dict(),
+                "job_id": active_job_id,
+            },
+        )
 
 
 def _asset_access_url(storage, asset: dict, project_id: Optional[UUID] = None) -> str:
@@ -428,6 +517,7 @@ async def create_editor_project(
         user_id=user_id,
         description=description,
         background_video_id=background_video_id,
+        force_latest_search=payload.force_latest_search,
     )
     return {
         "job_id": job_id,
@@ -436,6 +526,22 @@ async def create_editor_project(
         "websocket_url": f"/ws/progress/{job_id}",
         "status_url": f"/jobs/{job_id}/progress",
     }
+
+
+@app.get("/editor/projects")
+async def list_editor_projects(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    user_id: int = Depends(get_current_user_id),
+):
+    """List the current user's persistent editor projects, newest first."""
+    try:
+        projects = await _run_blocking(
+            editor_repository.list_projects, user_id, offset, limit
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"projects": projects, "offset": offset, "limit": limit}
 
 
 @app.get("/editor/projects/{project_id}")
@@ -463,6 +569,7 @@ async def generate_editor_project_audio(
     project = await _run_blocking(editor_repository.get_project, project_id, user_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Editor project not found")
+    _reject_if_visual_generation_active(project_id, user_id)
     job_id = ProgressService.create_audio_job(
         user_id=user_id, dialogue_title=str(project["title"])
     )
@@ -520,6 +627,7 @@ async def add_editor_line(
     speaker = payload.speaker.strip()
     if not caption or not speaker:
         raise HTTPException(status_code=422, detail="Caption and speaker cannot be blank")
+    _reject_if_visual_generation_active(project_id, user_id)
     try:
         project = await _run_blocking(
             editor_repository.add_line,
@@ -548,6 +656,7 @@ async def reorder_editor_lines(
     payload: EditorLineOrderUpdate,
     user_id: int = Depends(get_current_user_id),
 ):
+    _reject_if_visual_generation_active(project_id, user_id)
     try:
         project = await _run_blocking(
             editor_repository.reorder_lines,
@@ -572,6 +681,7 @@ async def delete_editor_line(
     payload: EditorLineDelete,
     user_id: int = Depends(get_current_user_id),
 ):
+    _reject_if_visual_generation_active(project_id, user_id)
     try:
         project = await _run_blocking(
             editor_repository.delete_line,
@@ -602,6 +712,7 @@ async def update_editor_line(
         raise HTTPException(status_code=422, detail="Caption and speaker cannot be blank")
     if payload.expected_revision < 1:
         raise HTTPException(status_code=422, detail="expected_revision must be at least 1")
+    _reject_if_visual_generation_active(project_id, user_id)
 
     try:
         line = await _run_blocking(
@@ -634,6 +745,7 @@ async def restore_narrated_script(
     Structural script edits are deliberately excluded from this first version.
     Visual media and timeline clips are never modified by this operation.
     """
+    _reject_if_visual_generation_active(project_id, user_id)
     try:
         project = await _run_blocking(
             editor_repository.restore_narrated_script,
@@ -873,6 +985,191 @@ async def delete_timeline_clip(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+# ============ Generated Visuals Endpoints ============
+
+
+def _visual_job_response(job_id: str, mode: str, retry_of_job_id: Optional[str] = None) -> dict:
+    payload = {
+        "job_id": job_id,
+        "job_type": "visual_generation",
+        "mode": mode,
+        "message": "Visual generation started.",
+        "websocket_url": f"/ws/progress/{job_id}",
+        "status_url": f"/jobs/{job_id}/progress",
+    }
+    if retry_of_job_id is not None:
+        payload["retry_of_job_id"] = retry_of_job_id
+    return payload
+
+
+def _visual_job_or_404(job_id: str, project_id: UUID, user_id: int):
+    job = ProgressService.get_job(job_id)
+    if (
+        job is None
+        or getattr(job, "job_type", None) != "visual_generation"
+        or job.user_id != user_id
+        or job.project_id != str(project_id)
+    ):
+        raise HTTPException(status_code=404, detail="Visual-generation job not found")
+    return job
+
+
+@app.post("/editor/projects/{project_id}/visual-generations", status_code=202)
+async def start_visual_generation(
+    project_id: UUID,
+    payload: VisualGenerationStartRequest,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Start automatic or review-mode post-narration visual generation.
+
+    Only one visual run may be active per project at a time; a duplicate
+    request while one is active returns 409 with the existing job id.
+    """
+    project = await _run_blocking(editor_repository.get_project, project_id, user_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Editor project not found")
+    if not project.get("active_composition_id"):
+        raise HTTPException(
+            status_code=409, detail="Generate narration before generating visuals"
+        )
+
+    job_id = ProgressService.create_visual_job(
+        user_id=user_id,
+        project_id=str(project_id),
+        mode=payload.mode,
+        dialogue_title=str(project["title"]),
+    )
+    try:
+        await claim_visual_run(user_id, project_id, job_id)
+    except VisualGenerationActiveError as exc:
+        raise HTTPException(status_code=409, detail=exc.to_dict() | dict(exc.details)) from exc
+
+    service = VisualGenerationService()
+    if payload.mode == "automatic":
+        background_tasks.add_task(service.run_automatic, job_id, user_id, project_id)
+    else:
+        background_tasks.add_task(service.run_review_discovery, job_id, user_id, project_id)
+    return _visual_job_response(job_id, payload.mode)
+
+
+@app.post("/editor/projects/{project_id}/visual-generations/{job_id}/cancel")
+async def cancel_visual_generation(
+    project_id: UUID,
+    job_id: str,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Idempotent cooperative cancellation; safe to call repeatedly."""
+    job = _visual_job_or_404(job_id, project_id, user_id)
+    if job.status in ("completed", "failed", "cancelled"):
+        return {"job_id": job_id, "status": job.status}
+    from services.visual_generation_service import cancel_visual_run
+
+    cancel_visual_run(job_id)
+    return {"job_id": job_id, "status": "cancelling"}
+
+
+@app.post("/editor/projects/{project_id}/visual-generations/{job_id}/discard")
+async def discard_visual_review(
+    project_id: UUID,
+    job_id: str,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Discard an awaiting-review run without placing anything."""
+    _visual_job_or_404(job_id, project_id, user_id)
+    service = VisualGenerationService()
+    try:
+        await service.discard_review(job_id, user_id, project_id)
+    except VisualGenerationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"job_id": job_id, "status": "cancelled"}
+
+
+@app.post(
+    "/editor/projects/{project_id}/visual-generations/{job_id}/slots/{slot_id}/search"
+)
+async def search_visual_slot(
+    project_id: UUID,
+    job_id: str,
+    slot_id: str,
+    payload: VisualGenerationSlotSearchRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Explicit review re-search for one slot with an edited query."""
+    _visual_job_or_404(job_id, project_id, user_id)
+    service = VisualGenerationService()
+    try:
+        await service.search_slot(
+            job_id, user_id, project_id, slot_id, payload.query.strip()
+        )
+    except VisualGenerationInvalidRequestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except VisualGenerationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GenerationError as exc:
+        raise HTTPException(status_code=422, detail=exc.to_dict()) from exc
+    job = ProgressService.get_job(job_id)
+    return {"job_id": job_id, "slots": [slot.model_dump(mode="json") for slot in job.slots]}
+
+
+@app.post("/editor/projects/{project_id}/visual-generations/{job_id}/place")
+async def place_visual_selections(
+    project_id: UUID,
+    job_id: str,
+    payload: VisualGenerationPlaceRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Confirm staged review selections: ingest, then atomically replace."""
+    _visual_job_or_404(job_id, project_id, user_id)
+    service = VisualGenerationService()
+    selections = [
+        (selection.slot_id, selection.candidate_token) for selection in payload.selections
+    ]
+    try:
+        result = await service.place_selections(job_id, user_id, project_id, selections)
+    except VisualGenerationInvalidRequestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except VisualGenerationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GenerationError as exc:
+        raise HTTPException(status_code=409, detail=exc.to_dict()) from exc
+    return {"job_id": job_id, "result": result}
+
+
+@app.post("/editor/projects/{project_id}/visual-generations/{job_id}/retry-failed", status_code=202)
+async def retry_failed_visual_slots(
+    project_id: UUID,
+    job_id: str,
+    payload: VisualGenerationRetryRequest,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Retry only failed/skipped slots on a fresh job; successes are preserved."""
+    original = _visual_job_or_404(job_id, project_id, user_id)
+    if original.status not in ("completed", "failed"):
+        raise HTTPException(
+            status_code=409, detail="Only a settled visual-generation job can be retried"
+        )
+    service = VisualGenerationService()
+    try:
+        new_job_id = await service.retry_failed(
+            job_id, user_id, project_id, payload.slot_ids
+        )
+    except VisualGenerationActiveError as exc:
+        raise HTTPException(status_code=409, detail=exc.to_dict() | dict(exc.details)) from exc
+    except VisualGenerationInvalidRequestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except GenerationError as exc:
+        raise HTTPException(status_code=409, detail=exc.to_dict()) from exc
+
+    new_job = ProgressService.get_job(new_job_id)
+    if new_job.mode == "automatic":
+        background_tasks.add_task(service.run_automatic_retry, new_job_id, user_id, project_id)
+    else:
+        background_tasks.add_task(service.run_review_retry, new_job_id, user_id, project_id)
+    return _visual_job_response(new_job_id, new_job.mode, retry_of_job_id=job_id)
+
+
 # ============ Async Job Endpoints (with Progress Tracking) ============
 
 async def _process_project_audio_job(
@@ -887,10 +1184,12 @@ async def _process_project_audio_job(
         result["audio_url"] = service.storage.generate_url(result["storage_key"])
         ProgressService.update_job(job_id=job_id, status="completed", result=result)
     except Exception as exc:
-        ProgressService.update_job(
-            job_id=job_id,
-            status="failed",
-            error=f"{type(exc).__name__}: {exc}",
+        _record_generation_job_failure(
+            job_id,
+            exc,
+            operation="audio_generation",
+            user_id=user_id,
+            project_id=project_id,
         )
 
 
@@ -899,6 +1198,7 @@ async def _process_transcript_job(
     user_id: int,
     description: str,
     background_video_id: str,
+    force_latest_search: bool = True,
 ):
     """Background task for transcript generation with progress updates."""
     try:
@@ -918,22 +1218,19 @@ async def _process_transcript_job(
             current_stage="generating_dialogue",
         )
         
-        # Call the transcript extraction - returns SingleDialogue now
-        dialogue = await _run_blocking(
-            extract_transcripts,
+        dialogue_service = GrokDialogueService(create_xai_responses_client())
+
+        dialogue = await dialogue_service.generate_dialogue(
             description,
-            "text",
+            force_latest_search,
+            job_id=job_id,
+            user_id=user_id,
         )
         
         if not dialogue or not dialogue.dialogue:
-            ProgressService.update_job(
-                job_id=job_id,
-                status="failed",
-                error="No dialogue generated from source content. The AI model returned empty results.",
-            )
-            return
+            raise InvalidProviderOutputError("Grok returned no dialogue lines.")
         
-        # Persist Gemini's output before exposing it to the editor. The browser
+        # Persist Grok's output before exposing it to the editor. The browser
         # receives a project ID, loads that project, and sends only later edits.
         generated_dialogue = dialogue.model_dump()
         project = await _run_blocking(
@@ -957,11 +1254,12 @@ async def _process_transcript_job(
             result={"project_id": str(project["id"])},
         )
     
-    except Exception as e:
-        ProgressService.update_job(
-            job_id=job_id,
-            status="failed",
-            error=f"{type(e).__name__}: {str(e)}",
+    except Exception as exc:
+        _record_generation_job_failure(
+            job_id,
+            exc,
+            operation="dialogue_generation",
+            user_id=user_id,
         )
     
 
@@ -1042,7 +1340,7 @@ async def _process_project_video_job(
         background_path = await _run_blocking(
             _resolve_background_video, project["background_video_id"]
         )
-        audio_path = export_dir / "narration.mp3"
+        audio_path = export_dir / "narration.wav"
         storage = get_storage_backend()
         await _run_blocking(storage.download, composition_key, str(audio_path))
 
@@ -1129,10 +1427,12 @@ async def _process_project_video_job(
             },
         )
     except Exception as exc:
-        ProgressService.update_job(
-            job_id=job_id,
-            status="failed",
-            error=f"{type(exc).__name__}: {exc}",
+        _record_generation_job_failure(
+            job_id,
+            exc,
+            operation="video_generation",
+            user_id=user_id,
+            project_id=project_id,
         )
     finally:
         shutil.rmtree(export_dir, ignore_errors=True)
@@ -1167,67 +1467,37 @@ def _extract_subtopic_number(video: dict) -> int:
 
 @app.get("/videos")
 async def list_user_videos(
-    collection_offset: int = Query(0, ge=0, description="Number of collections to skip"),
-    collection_limit: int = Query(1, ge=1, le=10, description="Number of collections to return"),
+    offset: int = Query(0, ge=0, description="Number of videos to skip"),
+    limit: int = Query(10, ge=1, le=50, description="Number of videos to return"),
     user_id: int = Depends(get_current_user_id),
 ):
-    """
-    Return videos grouped by collection for the current user.
-    Fetches complete collections at a time (not breaking them up).
-    
-    Query params:
-    - collection_offset: How many collections to skip (default 0)
-    - collection_limit: How many collections to return (default 1, max 10)
-    
-    Returns collections in order (newest first), with videos within each collection sorted by subtopic (1→n).
+    """Return every export owned by the current user, newest first.
+
+    Persistent editor exports are intentionally valid without a legacy
+    collection, so the feed must paginate videos directly.
     """
     try:
-        # Step 1: Get the paginated collections (this is efficient - only metadata)
-        collections = await _run_blocking(
-            get_user_collections,
-            user_id,
-            collection_offset,
-            collection_limit,
+        video_service = VideoService()
+        videos = await _run_blocking(
+            video_service.get_user_videos, user_id, offset, limit
         )
-        
-        # Get total count of collections for pagination info
-        all_collections = await _run_blocking(
-            get_user_collections,
-            user_id,
-            0,
-            1000,  # High limit to get count
-        )
-        total_collections = len(all_collections)
-        
-        # Step 2: Fetch videos ONLY for these specific collections
-        result_videos = []
-        for collection in collections:
-            coll_id = collection["id"]
-            
-            # Fetch videos for this specific collection
-            collection_videos = await _run_blocking(
-                get_collection_videos,
-                coll_id,
-                0,
-                50,
-            )
-            
-            # Videos are already sorted by subtopic in get_collection_videos
-            result_videos.extend(collection_videos)
-        
-        # Sanitize videos (remove internal fields)
-        sanitized_videos = [
-            {k: v for k, v in video.items() if k not in ["s3_key", "created_at", "user_id"]}
-            for video in result_videos
-        ]
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        total_videos = await _run_blocking(video_service.get_video_count, user_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    sanitized_videos = [
+        {
+            k: v
+            for k, v in video.items()
+            if k not in {"storage_key", "s3_key", "user_id"}
+            and not (k == "collection_id" and v is None)
+        }
+        for video in videos
+    ]
     return {
-        "collection_offset": collection_offset,
-        "collection_limit": collection_limit,
-        "total_collections": total_collections,
+        "offset": offset,
+        "limit": limit,
+        "total_videos": total_videos,
         "returned_video_count": len(sanitized_videos),
         "videos": sanitized_videos,
     }
@@ -1310,10 +1580,43 @@ async def get_collection_details(
 @app.get("/videos/urls")
 async def get_video_urls():
     try:
-        storage = get_storage_backend()
-        urls = storage.generate_background_urls()
-        return {"videos": urls}
+        storage = get_background_storage_backend()
+        videos = storage.generate_background_urls()
+        # Mediabunny reads MP4 bytes with fetch/Range, so the response must be
+        # CORS-readable. The current R2 access key cannot administer bucket
+        # CORS; proxy catalog reads through this API until direct R2 browser
+        # delivery is enabled explicitly after configuring the bucket policy.
+        if os.getenv("BACKGROUND_VIDEO_DELIVERY", "proxy").lower() != "direct":
+            videos = [
+                {
+                    **video,
+                    "url": f"{PUBLIC_API_BASE_URL}/videos/{video['id']}/content",
+                }
+                for video in videos
+            ]
+        return {"videos": videos}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/videos/{video_id}/content")
+async def get_background_video_content(video_id: str):
+    """Serve a catalog MP4 with Starlette byte-range support for WebCodecs."""
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", video_id):
+        raise HTTPException(status_code=400, detail="Invalid background video id")
+    try:
+        path = await _run_blocking(_resolve_background_video, video_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
+        },
+    )

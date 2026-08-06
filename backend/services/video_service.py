@@ -157,6 +157,10 @@ class VideoService:
         
         return videos
     
+    def get_video_count(self, user_id: int) -> int:
+        """Return the number of exported videos owned by one user."""
+        return self.repository.get_video_count(user_id)
+
     def get_collection_videos(
         self, collection_id: int, offset: int = 0, limit: int = 50
     ) -> List[Dict]:

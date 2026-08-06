@@ -116,7 +116,7 @@ class VideoRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, s3_key, video_title, video_description, collection_id, created_at
+                    SELECT id, s3_key, video_title, video_description, created_at
                     FROM videos
                     WHERE user_id = %s
                     ORDER BY created_at DESC, id DESC
@@ -131,8 +131,7 @@ class VideoRepository:
                         "storage_key": row[1],
                         "title": row[2],
                         "description": row[3],
-                        "collection_id": row[4],
-                        "created_at": row[5],
+                        "created_at": row[4],
                     }
                     for row in rows
                 ]
